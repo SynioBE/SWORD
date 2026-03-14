@@ -14,7 +14,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Trust all proxies so cloudflared's X-Forwarded-* headers are respected
+        $middleware->trustProxies(at: '*');
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+
+        $middleware->validateCsrfTokens(except: [
+            'callback/servers/*/provision',
+            'callback/sites/*/install',
+        ]);
 
         $middleware->web(append: [
             HandleAppearance::class,

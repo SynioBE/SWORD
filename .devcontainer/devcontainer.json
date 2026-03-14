@@ -20,7 +20,14 @@
 		}
 	},
 	"remoteUser": "sail",
-	"postCreateCommand": "chown -R 1000:1000 /var/www/html 2>/dev/null || true"
+	"postCreateCommand": "chown -R 1000:1000 /var/www/html 2>/dev/null || true",
+	"postStartCommand": "mkdir -p /home/sail/.local/share/opencode && [ -f /tmp/opencode-auth.json ] && cp /tmp/opencode-auth.json /home/sail/.local/share/opencode/auth.json || true",
+	"features": {
+		"ghcr.io/danzilberdan/devcontainers/opencode:0": {}
+	},
+	"mounts": [
+		"source=${localEnv:HOME}/.local/share/opencode/auth.json,target=/tmp/opencode-auth.json,type=bind,consistency=cached"
+	]
 	// "forwardPorts": [],
 	// "runServices": [],
 	// "shutdownAction": "none",

@@ -1,0 +1,24 @@
+Create site script
+
+- Create site in app DB
+- Create user if needed (same as server provisioning)
+- Create directories and files
+- Setup Nginx config + firewall rules
+- Create Docker Compose file
+  - PHP (custom)
+  - Nginx
+  - Networks
+- Spin up containers & restart Ofelia
+- Install WordPress
+  - Fix permissions?
+  - Download WordPress via WP CLI
+  - Create MySQL DB on main MySQL container
+  - Create Redis cache on main Redis container (or separate container?)
+  - Create WP config
+  - Move WP config up
+  - Install WordPress via WP CLI
+  - Delete Hello Dolly plugin
+  - Install & enable Redis plugin
+  - Future: Install Sword plugin
+  - Install & enable FastCGI caching support
+- Future: Apply blueprint

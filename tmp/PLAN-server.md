@@ -1,0 +1,54 @@
+Server provisioning script
+
+- Create server in app DB
+- Check if root
+- Ping app after every step via curl
+- Wait until apt is ready
+- IPv4 preference
+- Setup swap disk and config
+- Upgrade OS packages
+- Install extra OS packages
+- Ensure cron is running
+- Install Docker
+  - Add GPG key
+  - Add Docker repo
+  - Update packages
+  - Install packages
+  - Create/update Docker config
+  - Restart Docker
+- SSH setup
+  - Disable passwordless auth
+  - Create SSH key
+  - Restart SSH
+  - Set hostname
+  - Set timezone
+  - Create root SSH directory
+- Create app folders (.sword ?)
+- Setup user (sword ?)
+  - Add user
+  - Create app folders (.sword ?)
+  - Add docker group
+  - Add to sudo and docker groups
+  - Setup Bash
+  - Set Sudo password
+  - Append generated SSH key to authorized keys (also for root)
+  - Copy source control keys into known hosts files
+  - Configure Git settings
+  - Chown & chmod home dir + chmod ssh key file
+- Security hardening
+  - UFW allow 22, 80, 443
+  - Enable UFW
+- Setup unattended security upgrades
+  - Install package
+  - Configure unattended upgrades
+- Auto-start Docker
+
+== INIT ==
+
+- Shared MySQL container
+- Shared Redis container (later: per site?)
+- Docker compose
+  - Proxy (would prefer Traefik here)
+  - MySQL
+  - Redis
+  - Ofelia
