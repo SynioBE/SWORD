@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import {
     Globe,
@@ -9,8 +8,9 @@ import {
     XCircle,
     Activity,
 } from 'lucide-vue-next';
-import AppLayout from '@/layouts/AppLayout.vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { index as sitesIndex, show as sitesShow } from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
 
@@ -54,7 +54,10 @@ const isPending = computed(() => props.site.status === 'pending');
 const isFailed = computed(() => props.site.status === 'failed');
 
 function startPolling() {
-    if (pollInterval) return;
+    if (pollInterval) {
+        return;
+    }
+
     pollInterval = setInterval(() => {
         router.reload({ only: ['site'] });
     }, 3000);
@@ -152,9 +155,16 @@ const completedSteps = computed(
 );
 
 const progressPercent = computed(() => {
-    if (isInstalled.value) return 100;
-    if (isPending.value) return 0;
+    if (isInstalled.value) {
+        return 100;
+    }
+
+    if (isPending.value) {
+        return 0;
+    }
+
     const done = ALL_STEPS.filter((s) => completedSteps.value.has(s)).length;
+
     return Math.round((done / ALL_STEPS.length) * 100);
 });
 </script>

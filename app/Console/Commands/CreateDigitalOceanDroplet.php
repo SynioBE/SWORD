@@ -64,10 +64,10 @@ class CreateDigitalOceanDroplet extends Command
         }
 
         $payload = json_encode([
-            'name'     => $this->option('name') ?? 'droplet-'.Str::lower(Str::random(8)),
-            'region'   => $this->option('region'),
-            'size'     => $this->option('size'),
-            'image'    => $this->option('image'),
+            'name' => $this->option('name') ?? 'droplet-'.Str::lower(Str::random(8)),
+            'region' => $this->option('region'),
+            'size' => $this->option('size'),
+            'image' => $this->option('image'),
             'ssh_keys' => [$sshKeyId],
         ]);
 
@@ -86,8 +86,8 @@ class CreateDigitalOceanDroplet extends Command
         }
 
         $status = $response->getStatusCode();
-        $body   = (string) $response->getBody();
-        $data   = json_decode($body, true);
+        $body = (string) $response->getBody();
+        $data = json_decode($body, true);
 
         if ($status !== 202) {
             $message = $data['message'] ?? $body;
@@ -154,7 +154,7 @@ class CreateDigitalOceanDroplet extends Command
     private function uploadOrFindKey(string $publicKey, string $apiKey, HttpFactory $factory): ?int
     {
         $parts = preg_split('/\s+/', trim($publicKey));
-        $name  = isset($parts[2]) && $parts[2] !== '' ? $parts[2] : 'key-'.Str::lower(Str::random(8));
+        $name = isset($parts[2]) && $parts[2] !== '' ? $parts[2] : 'key-'.Str::lower(Str::random(8));
 
         $payload = json_encode(['name' => $name, 'public_key' => trim($publicKey)]);
 
@@ -165,7 +165,7 @@ class CreateDigitalOceanDroplet extends Command
             ->withBody($factory->createStream($payload));
 
         $response = $this->httpClient->sendRequest($request);
-        $data     = json_decode((string) $response->getBody(), true);
+        $data = json_decode((string) $response->getBody(), true);
 
         if ($response->getStatusCode() === 201) {
             $this->line("SSH key <info>{$data['ssh_key']['name']}</info> uploaded to DigitalOcean.");
@@ -207,7 +207,7 @@ class CreateDigitalOceanDroplet extends Command
             ->withHeader('Authorization', 'Bearer '.$apiKey);
 
         $response = $this->httpClient->sendRequest($request);
-        $data     = json_decode((string) $response->getBody(), true);
+        $data = json_decode((string) $response->getBody(), true);
 
         return $data['ssh_keys'] ?? [];
     }

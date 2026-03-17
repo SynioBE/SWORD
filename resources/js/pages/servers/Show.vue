@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import {
     Server,
@@ -13,9 +12,11 @@ import {
     Activity,
     Info,
 } from 'lucide-vue-next';
-import AppLayout from '@/layouts/AppLayout.vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { index as serversIndex, show as serversShow } from '@/routes/servers';
 import type { BreadcrumbItem } from '@/types';
 
@@ -68,7 +69,10 @@ const isPending = computed(() => props.server.status === 'pending');
 const isFailed = computed(() => props.server.status === 'failed');
 
 function startPolling() {
-    if (pollInterval) return;
+    if (pollInterval) {
+        return;
+    }
+
     pollInterval = setInterval(() => {
         router.reload({ only: ['server'] });
     }, 3000);
@@ -92,7 +96,6 @@ onUnmounted(() => {
 });
 
 // Watch for status change — stop polling when done
-import { watch } from 'vue';
 watch(
     () => props.server.status,
     (status) => {
@@ -182,9 +185,16 @@ const completedSteps = computed(
 );
 
 const progressPercent = computed(() => {
-    if (isProvisioned.value) return 100;
-    if (isPending.value) return 0;
+    if (isProvisioned.value) {
+        return 100;
+    }
+
+    if (isPending.value) {
+        return 0;
+    }
+
     const done = ALL_STEPS.filter((s) => completedSteps.value.has(s)).length;
+
     return Math.round((done / ALL_STEPS.length) * 100);
 });
 </script>
