@@ -20,22 +20,27 @@ Please note that the `APP_URL` and the `APP_PORT` must be in sync.
 
 ## Start the containers and initialize the DB
 
+Start the containers
 ```shell
 ./vendor/bin/sail up -d
+```
+Initialize the DB
+```shell
 ./vendor/bin/sail artisan key:generate
 ./vendor/bin/sail artisan migrate
 ```
 
-## Enter the Laravel container
+## Initialize node stuffs and start Vite
+
+```shell
+./vendor/bin/sail npm install && npm run dev
+```
+
+## Enter the Laravel container (optional)
 ```shell
 docker compose exec laravel.test bash
 ```
 
-## Start Vite
-From inside the Laravel container
-```shell
-npm install && npm run dev
-```
 ## Connect to the Laravel application
 Open your browser and go to the URL specified in the .env file as `APP_URL`.
 
