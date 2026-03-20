@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import {
-    FolderGit2,
-    Server,
-} from 'lucide-vue-next';
+import { FolderGit2, Server, Globe } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -18,6 +15,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { index as serversIndex } from '@/routes/servers';
+import { index as sitesIndex } from '@/routes/sites';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -25,6 +23,11 @@ const mainNavItems: NavItem[] = [
         title: 'Servers',
         href: serversIndex(),
         icon: Server,
+    },
+    {
+        title: 'Sites',
+        href: sitesIndex(),
+        icon: Globe,
     },
 ];
 

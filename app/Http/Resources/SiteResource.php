@@ -25,6 +25,11 @@ class SiteResource extends JsonResource
             'install_log' => $this->install_log ?? [],
             'installed_at' => $this->installed_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
+            'server' => [
+                'id' => $this->server->id,
+                'name' => $this->server->name,
+                'ip_address' => $this->server->ip_address,
+            ],
         ];
     }
 }
