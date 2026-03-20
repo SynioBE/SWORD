@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\BackupDestinationController;
+use App\Http\Controllers\BackupScheduleController;
+use App\Http\Controllers\BackupScheduleIndexController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerProvisionCallbackController;
 use App\Http\Controllers\SiteController;
@@ -18,6 +21,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('servers.generate-name');
 
     Route::resource('servers', ServerController::class)
+        ->only(['index', 'store', 'show', 'destroy']);
+
+    Route::get('backup-schedules', BackupScheduleIndexController::class)
+        ->name('backup-schedules.index');
+
+    Route::resource('servers.backup-schedules', BackupScheduleController::class)
+        ->only(['store', 'destroy']);
+
+    Route::get('backup-destinations/generate-name', [BackupDestinationController::class, 'generateName'])
+        ->name('backup-destinations.generate-name');
+
+    Route::resource('backup-destinations', BackupDestinationController::class)
         ->only(['index', 'store', 'show', 'destroy']);
 
     Route::resource('sites', SiteController::class)
