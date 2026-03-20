@@ -32,14 +32,16 @@ The defaults should be fine in most cases.
 ## Install NPM dependencies
 
 ```shell
-sail npm install
+./vendor/bin/sail npm install
 ```
 
 ## Start Vite with Hot Module Reloading
 
 ```shell
-sail npm run dev
+./vendor/bin/sail npm run dev
 ```
+
+The above steps are performed by the [setup](scrpts/setup) script.
 
 ## Connect to the Laravel application
 
