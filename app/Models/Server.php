@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 use phpseclib3\Crypt\EC;
 
@@ -78,6 +79,12 @@ class Server extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** @return HasMany<BackupSchedule, $this> */
+    public function backupSchedules(): HasMany
+    {
+        return $this->hasMany(BackupSchedule::class);
     }
 
     public function isProvisioning(): bool

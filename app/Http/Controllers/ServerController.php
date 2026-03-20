@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Servers\StoreServerRequest;
 use App\Http\Resources\ServerResource;
+use App\Models\BackupDestination;
 use App\Models\Server;
 use App\Services\ServerNameGenerator;
 use Illuminate\Http\JsonResponse;
@@ -58,11 +59,39 @@ class ServerController extends Controller
             $provisionUrl,
         );
 
+        $backupSchedules = $server->backupSchedules()
+            ->with('backupDestination')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($schedule) => [
+                'id' => $schedule->id,
+                'backup_destination_id' => $schedule->backup_destination_id,
+                'destination_name' => $schedule->backupDestination->name,
+                'frequency' => $schedule->frequency,
+                'time' => $schedule->time,
+                'day_of_week' => $schedule->day_of_week,
+                'day_of_month' => $schedule->day_of_month,
+                'retention_count' => $schedule->retention_count,
+                'is_enabled' => $schedule->is_enabled,
+                'created_at' => $schedule->created_at->toIso8601String(),
+            ]);
+
+        $backupDestinations = $request->user()
+            ->backupDestinations()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (BackupDestination $d) => [
+                'id' => $d->id,
+                'name' => $d->name,
+            ]);
+
         return Inertia::render('servers/Show', [
             'server' => array_merge((new ServerResource($server))->resolve(), [
                 'callback_signature' => $server->callback_signature,
                 'wget_command' => $wgetCommand,
             ]),
+            'backupSchedules' => $backupSchedules,
+            'backupDestinations' => $backupDestinations,
         ]);
     }
 

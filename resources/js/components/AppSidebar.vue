@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { FolderGit2, Server, Globe } from 'lucide-vue-next';
+import {
+    CalendarClock,
+    Database,
+    FolderGit2,
+    Globe,
+    Server,
+} from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -14,11 +20,13 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
+import { index as backupSchedulesIndex } from '@/routes/backup-schedules';
 import { index as serversIndex } from '@/routes/servers';
 import { index as sitesIndex } from '@/routes/sites';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
+const platformNavItems: NavItem[] = [
     {
         title: 'Servers',
         href: serversIndex(),
@@ -28,6 +36,19 @@ const mainNavItems: NavItem[] = [
         title: 'Sites',
         href: sitesIndex(),
         icon: Globe,
+    },
+];
+
+const backupsNavItems: NavItem[] = [
+    {
+        title: 'Destinations',
+        href: backupDestinationsIndex(),
+        icon: Database,
+    },
+    {
+        title: 'Schedules',
+        href: backupSchedulesIndex(),
+        icon: CalendarClock,
     },
 ];
 
@@ -55,7 +76,8 @@ const footerNavItems: NavItem[] = [
         </SidebarHeader>
 
         <SidebarContent>
-            <NavMain :items="mainNavItems" />
+            <NavMain label="Platform" :items="platformNavItems" />
+            <NavMain label="Backups" :items="backupsNavItems" />
         </SidebarContent>
 
         <SidebarFooter>
