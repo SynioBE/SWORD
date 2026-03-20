@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands;
 
-use GuzzleHttp\Psr7\HttpFactory;
+use App\Services\DigitalOcean\CreateDigitalOceanDropletData;
+use App\Services\DigitalOcean\DigitalOceanDropletCreator;
+use App\Services\DigitalOcean\DigitalOceanDropletException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Psr\Http\Client\ClientExceptionInterface;
-use Psr\Http\Client\ClientInterface;
 
 class CreateDigitalOceanDroplet extends Command
 {
@@ -20,10 +20,9 @@ class CreateDigitalOceanDroplet extends Command
 
     protected $description = 'Creates a DigitalOcean droplet';
 
-    private const DO_API_BASE = 'https://api.digitalocean.com/v2';
     private const DO_API_SECRET_PATH = '/run/secrets/do-api';
 
-    public function __construct(private readonly ClientInterface $httpClient)
+    public function __construct(private readonly DigitalOceanDropletCreator $dropletCreator)
     {
         parent::__construct();
     }
@@ -46,79 +45,50 @@ class CreateDigitalOceanDroplet extends Command
             return self::FAILURE;
         }
 
-        $factory = new HttpFactory;
-
         $this->info('Resolving SSH key…');
 
         try {
-            $sshKeyId = $this->resolveSSHKey($publicKeyOption, $apiKey, $factory);
-        } catch (ClientExceptionInterface $e) {
-            $this->error('Failed to resolve SSH key: '.$e->getMessage());
+            $result = $this->dropletCreator->create(new CreateDigitalOceanDropletData(
+                apiKey: $apiKey,
+                name: $this->option('name') ?? 'droplet-'.Str::lower(Str::random(8)),
+                region: (string) $this->option('region'),
+                size: (string) $this->option('size'),
+                image: (string) $this->option('image'),
+                publicKey: $publicKeyOption,
+            ));
+        } catch (DigitalOceanDropletException $exception) {
+            $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
 
-        if ($sshKeyId === null) {
-            $this->error('Could not find or upload the provided SSH key.');
-
-            return self::FAILURE;
+        if ($result->sshKeyStatus === 'uploaded' && $result->sshKeyName !== null) {
+            $this->line("SSH key <info>{$result->sshKeyName}</info> uploaded to DigitalOcean.");
         }
 
-        $payload = json_encode([
-            'name'     => $this->option('name') ?? 'droplet-'.Str::lower(Str::random(8)),
-            'region'   => $this->option('region'),
-            'size'     => $this->option('size'),
-            'image'    => $this->option('image'),
-            'ssh_keys' => [$sshKeyId],
-        ]);
-
-        $request = $factory
-            ->createRequest('POST', self::DO_API_BASE.'/droplets')
-            ->withHeader('Content-Type', 'application/json')
-            ->withHeader('Authorization', 'Bearer '.$apiKey)
-            ->withBody($factory->createStream($payload));
-
-        try {
-            $response = $this->httpClient->sendRequest($request);
-        } catch (ClientExceptionInterface $e) {
-            $this->error('HTTP request failed: '.$e->getMessage());
-
-            return self::FAILURE;
+        if ($result->sshKeyStatus === 'existing' && $result->sshKeyName !== null) {
+            $this->line("Using existing DigitalOcean SSH key <info>{$result->sshKeyName}</info>.");
         }
 
-        $status = $response->getStatusCode();
-        $body   = (string) $response->getBody();
-        $data   = json_decode($body, true);
-
-        if ($status !== 202) {
-            $message = $data['message'] ?? $body;
-            $this->error("DigitalOcean API error [{$status}]: {$message}");
-
-            return self::FAILURE;
-        }
-
-        $droplet = $data['droplet'];
         $this->info('Droplet created successfully.');
         $this->table(
             ['ID', 'Name', 'Region', 'Size', 'Status'],
             [[
-                $droplet['id'],
-                $droplet['name'],
-                $droplet['region']['slug'] ?? $this->option('region'),
-                $droplet['size_slug'] ?? $this->option('size'),
-                $droplet['status'],
+                $result->dropletId,
+                $result->name,
+                $result->region,
+                $result->size,
+                $result->status,
             ]]
         );
 
-        $publicIp = $this->waitForPublicIp($droplet['id'], $apiKey, $factory);
-
-        if ($publicIp === null) {
+        if ($result->publicIp === null) {
             $this->warn('Droplet is active but no public IP was assigned within the timeout.');
 
             return self::FAILURE;
         }
 
-        $this->info("Public IP: {$publicIp}");
+        $this->info("Public IP: {$result->publicIp}");
 
         return self::SUCCESS;
     }
@@ -150,6 +120,7 @@ class CreateDigitalOceanDroplet extends Command
     {
         if (! is_readable(self::DO_API_SECRET_PATH)) {
             $this->info('DigitalOcean API not found in /run/secrets/do-api.');
+
             return null;
         }
 
@@ -157,136 +128,12 @@ class CreateDigitalOceanDroplet extends Command
 
         if ($apiKey === false) {
             $this->info('Failed to read DigitalOcean API key from /run/secrets/do-api.');
+
             return null;
         }
 
         $apiKey = trim($apiKey);
 
         return $apiKey !== '' ? $apiKey : null;
-    }
-
-    /**
-     * Resolve the --public-key option to a DigitalOcean SSH key ID.
-     *
-     * Accepts:
-     *   - A raw public key string (ssh-rsa / ssh-ed25519 / ecdsa-*): uploaded if not already present.
-     *   - A key name registered on DigitalOcean: looked up and resolved to its numeric ID.
-     *   - A numeric ID or fingerprint: returned as-is.
-     */
-    private function resolveSSHKey(string $value, string $apiKey, HttpFactory $factory): int|string|null
-    {
-        if ($this->isRawPublicKey($value)) {
-            return $this->uploadOrFindKey($value, $apiKey, $factory);
-        }
-
-        $id = $this->findKeyIdByName($value, $apiKey, $factory);
-
-        if ($id !== null) {
-            return $id;
-        }
-
-        // Fall through: assume it is already a fingerprint or numeric ID.
-        return $value;
-    }
-
-    private function isRawPublicKey(string $value): bool
-    {
-        return (bool) preg_match('/^(ssh-|ecdsa-|sk-ssh-)/i', trim($value));
-    }
-
-    private function uploadOrFindKey(string $publicKey, string $apiKey, HttpFactory $factory): ?int
-    {
-        $parts = preg_split('/\s+/', trim($publicKey));
-        $name  = isset($parts[2]) && $parts[2] !== '' ? $parts[2] : 'key-'.Str::lower(Str::random(8));
-
-        $payload = json_encode(['name' => $name, 'public_key' => trim($publicKey)]);
-
-        $request = $factory
-            ->createRequest('POST', self::DO_API_BASE.'/account/keys')
-            ->withHeader('Content-Type', 'application/json')
-            ->withHeader('Authorization', 'Bearer '.$apiKey)
-            ->withBody($factory->createStream($payload));
-
-        $response = $this->httpClient->sendRequest($request);
-        $data     = json_decode((string) $response->getBody(), true);
-
-        if ($response->getStatusCode() === 201) {
-            $this->line("SSH key <info>{$data['ssh_key']['name']}</info> uploaded to DigitalOcean.");
-
-            return $data['ssh_key']['id'];
-        }
-
-        // Key already exists on DigitalOcean — find it by matching the public key blob.
-        $trimmed = trim($publicKey);
-        foreach ($this->listSSHKeys($apiKey, $factory) as $key) {
-            if (trim($key['public_key']) === $trimmed) {
-                $this->line("Using existing DigitalOcean SSH key <info>{$key['name']}</info>.");
-
-                return $key['id'];
-            }
-        }
-
-        return null;
-    }
-
-    private function findKeyIdByName(string $name, string $apiKey, HttpFactory $factory): ?int
-    {
-        foreach ($this->listSSHKeys($apiKey, $factory) as $key) {
-            if ($key['name'] === $name) {
-                $this->line("Using existing DigitalOcean SSH key <info>{$key['name']}</info>.");
-
-                return $key['id'];
-            }
-        }
-
-        return null;
-    }
-
-    /** @return array<int, array{id: int, name: string, public_key: string}> */
-    private function listSSHKeys(string $apiKey, HttpFactory $factory): array
-    {
-        $request = $factory
-            ->createRequest('GET', self::DO_API_BASE.'/account/keys')
-            ->withHeader('Authorization', 'Bearer '.$apiKey);
-
-        $response = $this->httpClient->sendRequest($request);
-        $data     = json_decode((string) $response->getBody(), true);
-
-        return $data['ssh_keys'] ?? [];
-    }
-
-    private function waitForPublicIp(int $dropletId, string $apiKey, HttpFactory $factory): ?string
-    {
-        $this->output->write('Waiting for public IP');
-
-        for ($attempt = 0; $attempt < 30; $attempt++) {
-            sleep(5);
-            $this->output->write('.');
-
-            $request = $factory
-                ->createRequest('GET', self::DO_API_BASE."/droplets/{$dropletId}")
-                ->withHeader('Authorization', 'Bearer '.$apiKey);
-
-            try {
-                $response = $this->httpClient->sendRequest($request);
-            } catch (ClientExceptionInterface) {
-                continue;
-            }
-
-            $data = json_decode((string) $response->getBody(), true);
-
-            $ip = collect($data['droplet']['networks']['v4'] ?? [])
-                ->firstWhere('type', 'public')['ip_address'] ?? null;
-
-            if ($ip !== null) {
-                $this->newLine();
-
-                return $ip;
-            }
-        }
-
-        $this->newLine();
-
-        return null;
     }
 }
