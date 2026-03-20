@@ -21,6 +21,7 @@ class CreateDigitalOceanDroplet extends Command
     protected $description = 'Creates a DigitalOcean droplet';
 
     private const DO_API_BASE = 'https://api.digitalocean.com/v2';
+    private const DO_API_SECRET_PATH = '/run/secrets/do-api';
 
     public function __construct(private readonly ClientInterface $httpClient)
     {
@@ -29,10 +30,10 @@ class CreateDigitalOceanDroplet extends Command
 
     public function handle(): int
     {
-        $apiKey = $this->option('key') ?? config('services.digitalocean.token');
+        $apiKey = $this->resolveApiKey();
 
         if (empty($apiKey)) {
-            $this->error('An API key is required. Pass --key=<token> or set DIGITALOCEAN_TOKEN in your environment.');
+            $this->error('An API key is required. Pass --key=<token>, provide it in /run/secrets/do-api, or set DIGITALOCEAN_TOKEN in your environment.');
 
             return self::FAILURE;
         }
@@ -120,6 +121,48 @@ class CreateDigitalOceanDroplet extends Command
         $this->info("Public IP: {$publicIp}");
 
         return self::SUCCESS;
+    }
+
+    private function resolveApiKey(): ?string
+    {
+        $commandLineApiKey = $this->option('key');
+
+        if (is_string($commandLineApiKey) && trim($commandLineApiKey) !== '') {
+            return trim($commandLineApiKey);
+        }
+
+        $secretFileApiKey = $this->readApiKeyFromSecret();
+
+        if ($secretFileApiKey !== null) {
+            return $secretFileApiKey;
+        }
+
+        $configuredApiKey = config('services.digitalocean.token');
+
+        if (is_string($configuredApiKey) && trim($configuredApiKey) !== '') {
+            return trim($configuredApiKey);
+        }
+
+        return null;
+    }
+
+    private function readApiKeyFromSecret(): ?string
+    {
+        if (! is_readable(self::DO_API_SECRET_PATH)) {
+            $this->info('DigitalOcean API not found in /run/secrets/do-api.');
+            return null;
+        }
+
+        $apiKey = file_get_contents(self::DO_API_SECRET_PATH);
+
+        if ($apiKey === false) {
+            $this->info('Failed to read DigitalOcean API key from /run/secrets/do-api.');
+            return null;
+        }
+
+        $apiKey = trim($apiKey);
+
+        return $apiKey !== '' ? $apiKey : null;
     }
 
     /**

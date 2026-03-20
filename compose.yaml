@@ -1,3 +1,7 @@
+secrets:
+    do-api:
+        file: secrets/do-api.txt
+
 services:
     laravel.test:
         build:
@@ -17,6 +21,8 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+        secrets:
+            - do-api
         volumes:
             - '.:/var/www/html'
         networks:
