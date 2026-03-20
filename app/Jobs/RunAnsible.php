@@ -28,6 +28,15 @@ class RunAnsible implements ShouldQueue
     {
         $server = \App\Models\Server::findOrFail( $this->serverID );
 
+        $this->testRawSSHConnection( $server );
+    }
+
+    /**
+     * Test the raw SSH connection
+     *
+     * @param mixed $server
+     */
+    protected function testRawSSHConnection( $server) {
         $user = 'root'; // @todo make this a variable.
         $port = 22; // @todo make this a variable.
         $server_ip = $server->ip_address;
