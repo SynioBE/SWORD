@@ -41,7 +41,7 @@ The defaults should be fine in most cases.
 ./vendor/bin/sail npm run dev
 ```
 
-The above steps are performed by the [setup](scrpts/setup) script.
+The above steps are performed by the [setup](setup.sh) script.
 
 ## Connect to the Laravel application
 
