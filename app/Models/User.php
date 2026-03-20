@@ -33,6 +33,12 @@ class User extends Authenticatable
         ];
     }
 
+    /** @return HasMany<Integration, $this> */
+    public function integrations(): HasMany
+    {
+        return $this->hasMany(Integration::class);
+    }
+
     /** @return HasMany<Server, $this> */
     public function servers(): HasMany
     {

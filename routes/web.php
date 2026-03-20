@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\CloudflareController;
+use App\Http\Controllers\CloudflarePurgeCacheController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerProvisionCallbackController;
 use App\Http\Controllers\SiteController;
@@ -22,6 +24,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('sites', SiteController::class)
         ->only(['index', 'store', 'show']);
+
+    Route::get('cloudflare', [CloudflareController::class, 'index'])->name('cloudflare.index');
+    Route::get('cloudflare/{integration}', [CloudflareController::class, 'zones'])->name('cloudflare.zones');
+    Route::get('cloudflare/{integration}/{zone}', [CloudflareController::class, 'show'])->name('cloudflare.show');
+    Route::post('cloudflare/{integration}/{zone}/purge-cache', CloudflarePurgeCacheController::class)->name('cloudflare.purge-cache');
 });
 
 // Public, token-secured — no auth required

@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import {
     FolderGit2,
     Server,
+  CloudCog,
 } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -17,6 +18,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { index as cloudflareIndex } from '@/routes/cloudflare';
 import { index as serversIndex } from '@/routes/servers';
 import type { NavItem } from '@/types';
 
@@ -26,6 +28,11 @@ const mainNavItems: NavItem[] = [
         href: serversIndex(),
         icon: Server,
     },
+  {
+    title: 'Cloudflare',
+    href: cloudflareIndex(),
+    icon: CloudCog,
+  },
 ];
 
 const footerNavItems: NavItem[] = [
