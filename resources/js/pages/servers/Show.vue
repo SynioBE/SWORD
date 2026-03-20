@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import {
     Server,
     CheckCircle2,
@@ -12,11 +12,22 @@ import {
     Terminal,
     Activity,
     Info,
+    Trash2,
 } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { index as serversIndex, show as serversShow } from '@/routes/servers';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+    DialogClose,
+} from '@/components/ui/dialog';
+import { index as serversIndex, show as serversShow, destroy as serversDestroy } from '@/routes/servers';
 import type { BreadcrumbItem } from '@/types';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
 
@@ -186,6 +197,18 @@ function stepTimestamp(key: string): string | null {
     const entry = props.server.provision_log.find((l) => l.step === key);
     return entry ? formatTime(entry.timestamp) : null;
 }
+
+// ── Delete server ────────────────────────────────────────────
+const showDeleteDialog = ref(false);
+const deleteForm = useForm({});
+
+function deleteServer() {
+    deleteForm.delete(serversDestroy(props.server.id).url, {
+        onSuccess: () => {
+            showDeleteDialog.value = false;
+        },
+    });
+}
 </script>
 
 <template>
@@ -222,16 +245,47 @@ function stepTimestamp(key: string): string | null {
                         </div>
                     </div>
                 </div>
-                <Badge :variant="statusVariant(server.status)" class="mt-1">
-                    <CheckCircle2 v-if="isProvisioned" class="size-3" />
-                    <Loader2
-                        v-else-if="isProvisioning"
-                        class="size-3 animate-spin"
-                    />
-                    <XCircle v-else-if="isFailed" class="size-3" />
-                    <Clock v-else class="size-3" />
-                    {{ statusLabel(server.status) }}
-                </Badge>
+                <div class="flex items-center gap-2">
+                    <Badge :variant="statusVariant(server.status)" class="mt-1">
+                        <CheckCircle2 v-if="isProvisioned" class="size-3" />
+                        <Loader2
+                            v-else-if="isProvisioning"
+                            class="size-3 animate-spin"
+                        />
+                        <XCircle v-else-if="isFailed" class="size-3" />
+                        <Clock v-else class="size-3" />
+                        {{ statusLabel(server.status) }}
+                    </Badge>
+
+                    <Dialog v-model:open="showDeleteDialog">
+                        <DialogTrigger as-child>
+                            <Button variant="ghost" size="icon" class="mt-1 text-muted-foreground hover:text-destructive">
+                                <Trash2 class="size-4" />
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Delete server</DialogTitle>
+                                <DialogDescription>
+                                    Are you sure you want to delete <strong>{{ server.name }}</strong>? This action cannot be undone.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                                <DialogClose as-child>
+                                    <Button variant="outline">Cancel</Button>
+                                </DialogClose>
+                                <Button
+                                    variant="destructive"
+                                    :disabled="deleteForm.processing"
+                                    @click="deleteServer"
+                                >
+                                    <Loader2 v-if="deleteForm.processing" class="size-4 animate-spin" />
+                                    Delete server
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             <!-- Pending: show provisioning instructions -->

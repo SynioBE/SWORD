@@ -85,6 +85,15 @@ class ServerController extends Controller
         ]);
     }
 
+    public function destroy(Request $request, Server $server): RedirectResponse
+    {
+        abort_unless($server->user_id === $request->user()->id, 403);
+
+        $server->delete();
+
+        return redirect()->route('servers.index');
+    }
+
     public function provisionScript(Request $request, Server $server): \Illuminate\Http\Response
     {
         abort_unless($request->query('token') === $server->provision_token, 403);

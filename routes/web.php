@@ -16,7 +16,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('servers.generate-name');
 
     Route::resource('servers', ServerController::class)
-        ->only(['index', 'store', 'show']);
+        ->only(['index', 'store', 'show', 'destroy']);
 
     // Route::resource('sites', SiteController::class)
     //     ->only(['index', 'store', 'show']);
