@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import {
     Server,
@@ -14,7 +13,7 @@ import {
     Info,
     Trash2,
 } from 'lucide-vue-next';
-import AppLayout from '@/layouts/AppLayout.vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,9 +26,10 @@ import {
     DialogTrigger,
     DialogClose,
 } from '@/components/ui/dialog';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
 import { index as serversIndex, show as serversShow, destroy as serversDestroy } from '@/routes/servers';
 import type { BreadcrumbItem } from '@/types';
-import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
 
 interface ProvisionStep {
     step: string;
@@ -80,7 +80,10 @@ const isPending = computed(() => props.server.status === 'pending');
 const isFailed = computed(() => props.server.status === 'failed');
 
 function startPolling() {
-    if (pollInterval) return;
+  if (pollInterval) {
+    return;
+  }
+
     pollInterval = setInterval(() => {
         router.reload({ only: ['server'] });
     }, 3000);
@@ -103,8 +106,6 @@ onUnmounted(() => {
     stopPolling();
 });
 
-// Watch for status change — stop polling when done
-import { watch } from 'vue';
 watch(
     () => props.server.status,
     (status) => {
@@ -155,16 +156,27 @@ function formatTime(iso: string): string {
 
 // The index of the last logged step (by log order, not step order) — supports re-runs
 const lastCompletedIndex = computed(() => {
-    if (isProvisioned.value) return STEP_KEYS.length - 1;
+
+  if (isProvisioned.value) {
+    return STEP_KEYS.length - 1;
+  }
+
     for (let i = props.server.provision_log.length - 1; i >= 0; i--) {
         const idx = STEP_KEYS.indexOf(props.server.provision_log[i].step);
-        if (idx !== -1) return idx;
-    }
+
+      if (idx !== -1) {
+        return idx;
+      }
+  }
+
     return -1;
 });
 
 function isStepCompleted(index: number): boolean {
-    if (isProvisioned.value) return true;
+  if (isProvisioned.value) {
+    return true;
+  }
+
     // A step is completed if a later or equal step was logged
     return index <= lastCompletedIndex.value;
 }
@@ -175,10 +187,17 @@ const hasStarted = computed(() =>
 );
 
 function isStepActive(index: number): boolean {
-    if (isProvisioned.value) return false;
-    if (!hasStarted.value) return false;
+  if (isProvisioned.value) {
+    return false;
+  }
+
+  if (!hasStarted.value) {
+    return false;
+  }
+
     // Show spinner on the step right after the last completed one
     const nextIndex = lastCompletedIndex.value + 1;
+
     return index === nextIndex && index < STEP_KEYS.length;
 }
 
@@ -187,14 +206,22 @@ const completedStepKeys = computed(
 );
 
 const progressPercent = computed(() => {
-    if (isProvisioned.value) return 100;
-    if (isPending.value) return 0;
+  if (isProvisioned.value) {
+    return 100;
+  }
+
+  if (isPending.value) {
+    return 0;
+  }
+
     const done = STEP_KEYS.filter((k) => completedStepKeys.value.has(k)).length;
+
     return Math.round((done / STEP_KEYS.length) * 100);
 });
 
 function stepTimestamp(key: string): string | null {
     const entry = props.server.provision_log.find((l) => l.step === key);
+
     return entry ? formatTime(entry.timestamp) : null;
 }
 
