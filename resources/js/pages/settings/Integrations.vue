@@ -60,9 +60,9 @@ const PROVIDER_LABELS: Record<string, string> = {
     cloudflare: 'Cloudflare',
 };
 
-// const props = defineProps<{
-//     integrations: IntegrationRow[];
-// }>();
+defineProps<{
+  integrations: IntegrationRow[];
+}>();
 
 const breadcrumbItems: BreadcrumbItem[] = [
     { title: 'Integrations', href: integrationsIndex() },
