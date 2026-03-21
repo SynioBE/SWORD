@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CloudflareController;
+use App\Http\Controllers\CloudflareDnsRecordController;
 use App\Http\Controllers\CloudflarePurgeCacheController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerProvisionCallbackController;
@@ -29,6 +30,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('cloudflare/{integration}', [CloudflareController::class, 'zones'])->name('cloudflare.zones');
     Route::get('cloudflare/{integration}/{zone}', [CloudflareController::class, 'show'])->name('cloudflare.show');
     Route::post('cloudflare/{integration}/{zone}/purge-cache', CloudflarePurgeCacheController::class)->name('cloudflare.purge-cache');
+    Route::post('cloudflare/{integration}/{zone}/dns-records', [CloudflareDnsRecordController::class, 'store'])->name('cloudflare.dns-records.store');
+    Route::delete('cloudflare/{integration}/{zone}/dns-records/{record}', [CloudflareDnsRecordController::class, 'destroy'])->name('cloudflare.dns-records.destroy');
 });
 
 // Public, token-secured — no auth required

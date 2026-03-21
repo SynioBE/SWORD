@@ -1,14 +1,30 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
-import { ChevronLeft, RefreshCw, Shield, BarChart3, Globe } from 'lucide-vue-next';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { ChevronLeft, Plus, RefreshCw, Shield, Globe, Trash2 } from 'lucide-vue-next';
 import { ref } from 'vue';
 import Heading from '@/components/Heading.vue';
+import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { index as cloudflareIndex, zones as cloudflareZones, purgeCache as cloudfarePurgeCache } from '@/routes/cloudflare';
-import type { BreadcrumbItem } from '@/types';
 import {
   Table,
   TableBody,
@@ -18,6 +34,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { index as cloudflareIndex, zones as cloudflareZones, purgeCache as cloudfarePurgeCache } from '@/routes/cloudflare';
+import { store as dnsRecordsStore, destroy as dnsRecordsDestroy } from '@/routes/cloudflare/dns-records';
+import type { BreadcrumbItem } from '@/types';
 
 interface DnsRecord {
   id: string;
@@ -61,6 +81,43 @@ const breadcrumbs: BreadcrumbItem[] = [
   { title: props.integration.name, href: cloudflareZones({ integration: props.integration.id }) },
   { title: props.zoneName, href: '#' },
 ];
+
+const showDnsModal = ref(false);
+
+const dnsForm = useForm({
+  name: '',
+  type: 'A' as 'A' | 'CNAME' | 'both',
+  content: '',
+  cname_content: '',
+  proxied: false,
+  ttl: 1,
+});
+
+function openDnsModal(): void {
+  dnsForm.reset();
+  showDnsModal.value = true;
+}
+
+function submitDnsRecord(): void {
+  dnsForm.post(
+    dnsRecordsStore.url({ integration: props.integration.id, zone: props.zoneId }),
+    {
+      onSuccess: () => {
+        showDnsModal.value = false;
+        dnsForm.reset();
+      },
+    },
+  );
+}
+
+function deleteDnsRecord(recordId: string): void {
+  if (!confirm('Delete this DNS record? This cannot be undone.')) {
+    return;
+  }
+  router.delete(
+    dnsRecordsDestroy.url({ integration: props.integration.id, zone: props.zoneId, record: recordId }),
+  );
+}
 
 const purgingCache = ref(false);
 
@@ -140,10 +197,10 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
             <Globe class="mr-2 h-4 w-4" />
             DNS Records
           </TabsTrigger>
-          <TabsTrigger value="analytics">
+          <!-- <TabsTrigger value="analytics">
             <BarChart3 class="mr-2 h-4 w-4" />
             Analytics
-          </TabsTrigger>
+          </TabsTrigger> -->
           <TabsTrigger value="ssl">
             <Shield class="mr-2 h-4 w-4" />
             SSL / TLS
@@ -156,6 +213,16 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
 
         <!-- DNS Records -->
         <TabsContent value="dns" class="mt-6">
+          <div class="mb-4 flex items-center justify-between">
+            <p class="text-sm text-muted-foreground">
+              {{ dnsRecords.length }} record{{ dnsRecords.length === 1 ? '' : 's' }}
+            </p>
+            <Button size="sm" @click="openDnsModal">
+              <Plus class="mr-1.5 h-4 w-4" />
+              Create DNS Record
+            </Button>
+          </div>
+
           <div v-if="dnsRecords.length === 0" class="text-sm text-muted-foreground">
             No DNS records found.
           </div>
@@ -167,6 +234,7 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
                 <TableHead>Content</TableHead>
                 <TableHead>TTL</TableHead>
                 <TableHead>Proxied</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -191,13 +259,19 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
                   </Badge>
                   <span v-else class="text-muted-foreground">—</span>
                 </TableCell>
+                <TableCell class="text-right">
+                  <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive"
+                    @click="deleteDnsRecord(record.id)">
+                    <Trash2 class="h-4 w-4" />
+                  </Button>
+                </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </TabsContent>
 
         <!-- Analytics -->
-        <TabsContent value="analytics" class="mt-6">
+        <!-- <TabsContent value="analytics" class="mt-6">
           <div v-if="!analytics?.totals" class="text-sm text-muted-foreground">
             No analytics data available.
           </div>
@@ -266,7 +340,7 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
           <p class="mt-4 text-xs text-muted-foreground">
             Data shown for the last 7 days.
           </p>
-        </TabsContent>
+        </TabsContent> -->
 
         <!-- SSL / TLS -->
         <TabsContent value="ssl" class="mt-6">
@@ -311,5 +385,82 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
         </TabsContent>
       </Tabs>
     </div>
+    <!-- Create DNS Record Modal -->
+    <Dialog v-model:open="showDnsModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create DNS Record</DialogTitle>
+          <DialogDescription>
+            Add a new DNS record to <strong>{{ zoneName }}</strong>. If a record
+            with the same type and name already exists it will be updated.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form class="flex flex-col gap-4 py-2" @submit.prevent="submitDnsRecord">
+          <!-- Type -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="dns-type">Type</Label>
+            <Select v-model="dnsForm.type">
+              <SelectTrigger id="dns-type">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="A">A — IPv4 address</SelectItem>
+                <SelectItem value="CNAME">CNAME — Alias</SelectItem>
+                <SelectItem value="both">Both (A + CNAME)</SelectItem>
+              </SelectContent>
+            </Select>
+            <InputError :message="dnsForm.errors.type" />
+          </div>
+
+          <!-- Name -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="dns-name">Name</Label>
+            <Input id="dns-name" v-model="dnsForm.name" placeholder="subdomain or @ for root" autocomplete="off" />
+            <InputError :message="dnsForm.errors.name" />
+          </div>
+
+          <!-- Content (A / both) -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="dns-content">
+              {{ dnsForm.type === 'CNAME' ? 'Target' : 'IPv4 Address' }}
+            </Label>
+            <Input id="dns-content" v-model="dnsForm.content"
+              :placeholder="dnsForm.type === 'CNAME' ? 'target.example.com' : '1.2.3.4'" autocomplete="off" />
+            <InputError :message="dnsForm.errors.content" />
+          </div>
+
+          <!-- CNAME content (only for 'both') -->
+          <div v-if="dnsForm.type === 'both'" class="flex flex-col gap-1.5">
+            <Label for="dns-cname-content">CNAME Target</Label>
+            <Input id="dns-cname-content" v-model="dnsForm.cname_content" placeholder="target.example.com"
+              autocomplete="off" />
+            <InputError :message="dnsForm.errors.cname_content" />
+          </div>
+
+          <!-- TTL -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="dns-ttl">TTL <span class="text-muted-foreground">(1 = Auto)</span></Label>
+            <Input id="dns-ttl" v-model.number="dnsForm.ttl" type="number" min="1" placeholder="1" />
+            <InputError :message="dnsForm.errors.ttl" />
+          </div>
+
+          <!-- Proxied -->
+          <div class="flex items-center gap-2">
+            <Checkbox id="dns-proxied" v-model:checked="dnsForm.proxied" />
+            <Label for="dns-proxied">Proxy through Cloudflare</Label>
+          </div>
+
+          <DialogFooter class="pt-2">
+            <Button type="button" variant="outline" @click="showDnsModal = false">
+              Cancel
+            </Button>
+            <Button type="submit" :disabled="dnsForm.processing">
+              {{ dnsForm.processing ? 'Saving…' : 'Save Record' }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </AppLayout>
 </template>

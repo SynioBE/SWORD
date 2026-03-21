@@ -4,9 +4,6 @@ import { ChevronLeft } from 'lucide-vue-next';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { index as cloudflareIndex, show as cloudflareShow } from '@/routes/cloudflare';
-import type { BreadcrumbItem } from '@/types';
 import {
   Table,
   TableBody,
@@ -15,6 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { index as cloudflareIndex, show as cloudflareShow } from '@/routes/cloudflare';
+import type { BreadcrumbItem } from '@/types';
 
 interface Integration {
   id: number;

@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\User;
+use GuzzleHttp\Psr7\Response;
 use Inertia\Testing\AssertableInertia as Assert;
+use Psr\Http\Client\ClientInterface;
 
 // ─── Settings / Integrations ───────────────────────────────────────────────
 
@@ -294,4 +296,143 @@ test('cloudflare index lists only cloudflare integrations', function () {
 
 test('guests cannot access cloudflare pages', function () {
     $this->get(route('cloudflare.index'))->assertRedirect(route('login'));
+});
+
+// ─── DNS Records ───────────────────────────────────────────────────────────
+
+test('store dns record validates required fields', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('cloudflare.dns-records.store', [$integration->id, 'zone-abc']))
+        ->assertSessionHasErrors(['name', 'type', 'content']);
+});
+
+test('store dns record rejects invalid type', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('cloudflare.dns-records.store', [$integration->id, 'zone-abc']), [
+            'name' => 'app',
+            'type' => 'MX',
+            'content' => '1.2.3.4',
+        ])
+        ->assertSessionHasErrors('type');
+});
+
+test('store dns record requires cname_content when type is both', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('cloudflare.dns-records.store', [$integration->id, 'zone-abc']), [
+            'name' => 'app',
+            'type' => 'both',
+            'content' => '1.2.3.4',
+            // cname_content intentionally missing
+        ])
+        ->assertSessionHasErrors('cname_content');
+});
+
+test('store dns record calls cloudflare api and redirects back', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $mockClient = Mockery::mock(ClientInterface::class);
+
+    // getDnsRecords (upsert check) — returns empty list so a create is triggered
+    $emptyResponse = new Response(200, [], json_encode(['result' => []]));
+
+    // createDnsRecord — returns created record
+    $createdResponse = new Response(200, [], json_encode([
+        'result' => ['id' => 'rec-1', 'type' => 'A', 'name' => 'app.example.com', 'content' => '1.2.3.4'],
+    ]));
+
+    $mockClient->shouldReceive('sendRequest')->twice()->andReturn($emptyResponse, $createdResponse);
+    app()->instance(ClientInterface::class, $mockClient);
+
+    $this->actingAs($user)
+        ->post(route('cloudflare.dns-records.store', [$integration->id, 'zone-abc']), [
+            'name' => 'app.example.com',
+            'type' => 'A',
+            'content' => '1.2.3.4',
+            'proxied' => false,
+            'ttl' => 1,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+});
+
+test('destroy dns record calls cloudflare api and redirects back', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $mockClient = Mockery::mock(ClientInterface::class);
+
+    $deleteResponse = new Response(200, [], json_encode([
+        'result' => ['id' => 'rec-1'],
+    ]));
+
+    $mockClient->shouldReceive('sendRequest')->once()->andReturn($deleteResponse);
+    app()->instance(ClientInterface::class, $mockClient);
+
+    $this->actingAs($user)
+        ->delete(route('cloudflare.dns-records.destroy', [$integration->id, 'zone-abc', 'rec-1']))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+});
+
+test('user cannot modify dns records of another user integration', function () {
+    $owner = User::factory()->create();
+    $attacker = User::factory()->create();
+
+    $integration = $owner->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($attacker)
+        ->post(route('cloudflare.dns-records.store', [$integration->id, 'zone-abc']), [
+            'name' => 'app',
+            'type' => 'A',
+            'content' => '1.2.3.4',
+        ])
+        ->assertNotFound();
+
+    $this->actingAs($attacker)
+        ->delete(route('cloudflare.dns-records.destroy', [$integration->id, 'zone-abc', 'rec-1']))
+        ->assertNotFound();
+});
+
+test('guests cannot access dns record endpoints', function () {
+    $this->post(route('cloudflare.dns-records.store', [1, 'zone-abc']))->assertRedirect(route('login'));
+    $this->delete(route('cloudflare.dns-records.destroy', [1, 'zone-abc', 'rec-1']))->assertRedirect(route('login'));
 });
