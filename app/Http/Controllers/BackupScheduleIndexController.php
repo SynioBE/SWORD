@@ -26,6 +26,9 @@ class BackupScheduleIndexController extends Controller
                 'retention_count' => $schedule->retention_count,
                 'is_enabled' => $schedule->is_enabled,
                 'created_at' => $schedule->created_at->toIso8601String(),
+                'last_run' => $schedule->backupRuns()->latest()->first()?->only([
+                    'id', 'status', 'completed_at',
+                ]),
             ]))
             ->sortByDesc('created_at')
             ->values();

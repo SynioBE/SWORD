@@ -5,6 +5,7 @@ import {
     Trash2,
     Loader2,
     Calendar,
+    Archive,
 } from 'lucide-vue-next';
 import { ref } from 'vue';
 import { Badge } from '@/components/ui/badge';
@@ -54,9 +55,22 @@ interface ScheduleRow {
     created_at: string;
 }
 
+interface BackupRunRow {
+    id: number;
+    server_name: string;
+    status: string;
+    archive_name: string | null;
+    size_bytes: number | null;
+    duration_seconds: number | null;
+    started_at: string | null;
+    completed_at: string | null;
+    created_at: string;
+}
+
 const props = defineProps<{
     destination: DestinationDetail;
     schedules: ScheduleRow[];
+    recentRuns: BackupRunRow[];
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -91,6 +105,37 @@ function scheduleLabel(schedule: ScheduleRow): string {
     }
 
     return `Daily at ${schedule.time}`;
+}
+
+function runStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+    switch (status) {
+        case 'completed':
+            return 'default';
+        case 'running':
+            return 'secondary';
+        case 'failed':
+            return 'destructive';
+        default:
+            return 'outline';
+    }
+}
+
+function formatBytes(bytes: number | null): string {
+    if (bytes === null) return '—';
+    if (bytes < 1_000) return `${bytes} B`;
+    if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+    if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+    return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
+}
+
+function formatDuration(seconds: number | null): string {
+    if (seconds === null) return '—';
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
 }
 
 // ── Delete destination ────────────────────────────────────────
@@ -242,6 +287,58 @@ function deleteDestination() {
                         </div>
                         <Badge :variant="schedule.is_enabled ? 'default' : 'outline'">
                             {{ schedule.is_enabled ? 'Enabled' : 'Disabled' }}
+                        </Badge>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Backup Runs -->
+            <div
+                class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
+            >
+                <div
+                    class="flex items-center gap-3 border-b border-sidebar-border/70 px-5 py-4 dark:border-sidebar-border"
+                >
+                    <Archive class="size-5 shrink-0 text-muted-foreground" />
+                    <p class="text-sm font-medium">Recent Backup Runs</p>
+                    <span class="ml-auto text-xs text-muted-foreground">
+                        {{ recentRuns.length }} run{{ recentRuns.length !== 1 ? 's' : '' }}
+                    </span>
+                </div>
+
+                <div v-if="recentRuns.length === 0" class="px-5 py-8 text-center text-sm text-muted-foreground">
+                    No backup runs yet for this destination.
+                </div>
+
+                <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
+                    <div
+                        v-for="run in recentRuns"
+                        :key="run.id"
+                        class="flex items-center justify-between px-5 py-3"
+                    >
+                        <div>
+                            <p class="text-sm font-medium">
+                                {{ run.archive_name ?? run.server_name }}
+                            </p>
+                            <p class="mt-0.5 text-xs text-muted-foreground">
+                                {{ run.server_name }}
+                                <template v-if="run.duration_seconds !== null">
+                                    <span class="mx-1.5">·</span>
+                                    {{ formatDuration(run.duration_seconds) }}
+                                </template>
+                                <template v-if="run.size_bytes !== null">
+                                    <span class="mx-1.5">·</span>
+                                    {{ formatBytes(run.size_bytes) }}
+                                </template>
+                                <template v-if="run.completed_at">
+                                    <span class="mx-1.5">·</span>
+                                    {{ new Date(run.completed_at).toLocaleString() }}
+                                </template>
+                            </p>
+                        </div>
+                        <Badge :variant="runStatusVariant(run.status)">
+                            <Loader2 v-if="run.status === 'running'" class="size-3 animate-spin" />
+                            {{ run.status }}
                         </Badge>
                     </div>
                 </div>

@@ -87,6 +87,12 @@ class Server extends Model
         return $this->hasMany(BackupSchedule::class);
     }
 
+    /** @return HasMany<BackupRun, $this> */
+    public function backupRuns(): HasMany
+    {
+        return $this->hasMany(BackupRun::class);
+    }
+
     public function isProvisioning(): bool
     {
         return $this->status === 'provisioning';

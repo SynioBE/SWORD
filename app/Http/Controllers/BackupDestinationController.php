@@ -72,6 +72,23 @@ class BackupDestinationController extends Controller
                 'created_at' => $schedule->created_at->toIso8601String(),
             ]);
 
+        $recentRuns = $backupDestination->backupRuns()
+            ->with('server')
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get()
+            ->map(fn ($run) => [
+                'id' => $run->id,
+                'server_name' => $run->server->name,
+                'status' => $run->status,
+                'archive_name' => $run->archive_name,
+                'size_bytes' => $run->size_bytes,
+                'duration_seconds' => $run->duration_seconds,
+                'started_at' => $run->started_at?->toIso8601String(),
+                'completed_at' => $run->completed_at?->toIso8601String(),
+                'created_at' => $run->created_at->toIso8601String(),
+            ]);
+
         return Inertia::render('backup-destinations/Show', [
             'destination' => [
                 'id' => $backupDestination->id,
@@ -87,6 +104,7 @@ class BackupDestinationController extends Controller
                 'created_at' => $backupDestination->created_at->toIso8601String(),
             ],
             'schedules' => $schedules,
+            'recentRuns' => $recentRuns,
         ]);
     }
 

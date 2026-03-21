@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'server_id',
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'day_of_month',
     'retention_count',
     'is_enabled',
+    'repo_initialized',
 ])]
 class BackupSchedule extends Model
 {
@@ -30,6 +32,7 @@ class BackupSchedule extends Model
             'day_of_month' => 'integer',
             'retention_count' => 'integer',
             'is_enabled' => 'boolean',
+            'repo_initialized' => 'boolean',
         ];
     }
 
@@ -41,5 +44,11 @@ class BackupSchedule extends Model
     public function backupDestination(): BelongsTo
     {
         return $this->belongsTo(BackupDestination::class);
+    }
+
+    /** @return HasMany<BackupRun, $this> */
+    public function backupRuns(): HasMany
+    {
+        return $this->hasMany(BackupRun::class);
     }
 }
