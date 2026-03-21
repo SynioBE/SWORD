@@ -4,6 +4,7 @@ namespace App\Http\Requests\Sites;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreSiteRequest extends FormRequest
 {
@@ -21,12 +22,9 @@ class StoreSiteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'server_id' => ['required', 'integer', 'exists:servers,id'],
+            'server_id' => ['required', 'integer', Rule::exists('servers', 'id')->where('user_id', $this->user()->id)],
             'domain' => ['required', 'string', 'max:255'],
-            'site_label' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'in:8.1,8.2,8.3,8.4'],
-            'db_name' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/'],
-            'db_user' => ['required', 'string', 'max:32', 'regex:/^[a-zA-Z0-9_]+$/'],
         ];
     }
 
@@ -36,11 +34,10 @@ class StoreSiteRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'server_id.exists' => 'The selected server does not exist.',
-            'domain.required' => 'A domain name is required.',
+            'server_id.required' => 'Please select a server.',
+            'server_id.exists' => 'The selected server does not exist or does not belong to you.',
+            'domain.required' => 'Enter a domain name for the site.',
             'php_version.in' => 'The selected PHP version is not supported.',
-            'db_name.regex' => 'Database name may only contain letters, numbers, and underscores.',
-            'db_user.regex' => 'Database user may only contain letters, numbers, and underscores.',
         ];
     }
 }

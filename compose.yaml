@@ -1,6 +1,8 @@
 secrets:
     do-api:
         file: secrets/do-api.txt
+    hetzner-api:
+        file: secrets/hetzner-api.txt
 
 services:
     laravel.test:
@@ -23,6 +25,7 @@ services:
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
         secrets:
             - do-api
+            - hetzner-api
         volumes:
             - '.:/var/www/html'
         networks:

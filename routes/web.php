@@ -1,11 +1,15 @@
 <?php
 
+use App\Http\Controllers\BackupDestinationController;
+use App\Http\Controllers\BackupScheduleController;
+use App\Http\Controllers\BackupScheduleIndexController;
 use App\Http\Controllers\CloudflareController;
 use App\Http\Controllers\CloudflareDnsRecordController;
 use App\Http\Controllers\CloudflarePurgeCacheController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerProvisionCallbackController;
 use App\Http\Controllers\SiteController;
+use App\Http\Controllers\SiteInstallCallbackController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -21,6 +25,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('servers.generate-name');
 
     Route::resource('servers', ServerController::class)
+        ->only(['index', 'store', 'show', 'destroy']);
+
+    Route::get('backup-schedules', BackupScheduleIndexController::class)
+        ->name('backup-schedules.index');
+
+    Route::resource('servers.backup-schedules', BackupScheduleController::class)
+        ->only(['store', 'destroy']);
+
+    Route::get('backup-destinations/generate-name', [BackupDestinationController::class, 'generateName'])
+        ->name('backup-destinations.generate-name');
+
+    Route::resource('backup-destinations', BackupDestinationController::class)
         ->only(['index', 'store', 'show', 'destroy']);
 
     Route::resource('sites', SiteController::class)
@@ -39,14 +55,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::get('servers/{server}/scripts/provision', [ServerController::class, 'provisionScript'])
     ->name('servers.scripts.provision');
 
-// Route::get('sites/{site}/scripts/install', [SiteController::class, 'installScript'])
-//     ->name('sites.scripts.install');
+Route::get('sites/{site}/scripts/install', [SiteController::class, 'installScript'])
+    ->name('sites.scripts.install');
 
 // Public callbacks — secured by signature
 Route::post('servers/{server}/callbacks/provision', ServerProvisionCallbackController::class)
     ->name('servers.callbacks.provision');
 
-// Route::post('sites/{site}/callbacks/install', SiteInstallCallbackController::class)
-//     ->name('sites.callbacks.install');
+Route::post('sites/{site}/callbacks/install', SiteInstallCallbackController::class)
+    ->name('sites.callbacks.install');
 
 require __DIR__.'/settings.php';

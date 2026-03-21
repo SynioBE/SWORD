@@ -45,6 +45,12 @@ class User extends Authenticatable
         return $this->hasMany(Server::class);
     }
 
+    /** @return HasMany<BackupDestination, $this> */
+    public function backupDestinations(): HasMany
+    {
+        return $this->hasMany(BackupDestination::class);
+    }
+
     /** @return HasMany<Site, $this> */
     public function sites(): HasMany
     {
