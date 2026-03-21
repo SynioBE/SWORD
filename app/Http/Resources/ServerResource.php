@@ -26,6 +26,8 @@ class ServerResource extends JsonResource
             'current_step' => $this->current_step,
             'provision_log' => $this->provision_log ?? [],
             'provisioned_at' => $this->provisioned_at?->toIso8601String(),
+            'is_online' => $this->is_online,
+            'last_pinged_at' => $this->last_pinged_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
         ];
     }

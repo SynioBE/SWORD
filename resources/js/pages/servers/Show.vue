@@ -27,7 +27,11 @@ import {
     DialogTrigger,
     DialogClose,
 } from '@/components/ui/dialog';
-import { index as serversIndex, show as serversShow, destroy as serversDestroy } from '@/routes/servers';
+import {
+    index as serversIndex,
+    show as serversShow,
+    destroy as serversDestroy,
+} from '@/routes/servers';
 import type { BreadcrumbItem } from '@/types';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
 
@@ -49,6 +53,8 @@ interface ServerDetail {
     created_at: string;
     wget_command: string;
     callback_signature: string;
+    is_online: boolean;
+    last_pinged_at: string | null;
 }
 
 const props = defineProps<{
@@ -246,6 +252,13 @@ function deleteServer() {
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <Badge v-if="isProvisioned" variant="outline" class="mt-1 gap-1.5">
+                        <span
+                            class="size-1.5 rounded-full"
+                            :class="server.is_online ? 'bg-green-500' : 'animate-pulse bg-red-500'"
+                        />
+                        {{ server.is_online ? 'Online' : 'Offline' }}
+                    </Badge>
                     <Badge :variant="statusVariant(server.status)" class="mt-1">
                         <CheckCircle2 v-if="isProvisioned" class="size-3" />
                         <Loader2
@@ -259,7 +272,11 @@ function deleteServer() {
 
                     <Dialog v-model:open="showDeleteDialog">
                         <DialogTrigger as-child>
-                            <Button variant="ghost" size="icon" class="mt-1 text-muted-foreground hover:text-destructive">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="mt-1 text-muted-foreground hover:text-destructive"
+                            >
                                 <Trash2 class="size-4" />
                             </Button>
                         </DialogTrigger>
@@ -267,7 +284,9 @@ function deleteServer() {
                             <DialogHeader>
                                 <DialogTitle>Delete server</DialogTitle>
                                 <DialogDescription>
-                                    Are you sure you want to delete <strong>{{ server.name }}</strong>? This action cannot be undone.
+                                    Are you sure you want to delete
+                                    <strong>{{ server.name }}</strong
+                                    >? This action cannot be undone.
                                 </DialogDescription>
                             </DialogHeader>
                             <DialogFooter>
@@ -279,7 +298,10 @@ function deleteServer() {
                                     :disabled="deleteForm.processing"
                                     @click="deleteServer"
                                 >
-                                    <Loader2 v-if="deleteForm.processing" class="size-4 animate-spin" />
+                                    <Loader2
+                                        v-if="deleteForm.processing"
+                                        class="size-4 animate-spin"
+                                    />
                                     Delete server
                                 </Button>
                             </DialogFooter>
