@@ -56,10 +56,14 @@ class RunBackupJob implements ShouldQueue
                 $schedule->update(['repo_initialized' => true]);
             }
 
+            $dumpResult = $driver->dumpDatabases($ssh, $server);
+            $output .= "[dump]\n".$dumpResult->output."\n".$dumpResult->stderr."\n";
+
             $backupResult = $driver->createBackup($ssh, $schedule);
             $output .= "[backup]\n".$backupResult->output."\n".$backupResult->stderr."\n";
 
-            if (! $backupResult->isSuccessful()) {
+            // Borg exit codes: 0 = success, 1 = warnings (e.g. permission denied on some files), 2+ = error
+            if ($backupResult->exitCode >= 2) {
                 throw new \RuntimeException("Backup command failed with exit code {$backupResult->exitCode}");
             }
 
@@ -74,7 +78,7 @@ class RunBackupJob implements ShouldQueue
                 'output' => $output,
                 'archive_name' => $archiveName,
                 'size_bytes' => $sizeBytes,
-                'duration_seconds' => now()->diffInSeconds($run->started_at),
+                'duration_seconds' => (int) abs(now()->diffInSeconds($run->started_at)),
                 'completed_at' => now(),
             ]);
         } catch (Throwable $e) {
@@ -83,7 +87,7 @@ class RunBackupJob implements ShouldQueue
             $run->update([
                 'status' => 'failed',
                 'output' => $output,
-                'duration_seconds' => now()->diffInSeconds($run->started_at),
+                'duration_seconds' => (int) abs(now()->diffInSeconds($run->started_at)),
                 'completed_at' => now(),
             ]);
         } finally {

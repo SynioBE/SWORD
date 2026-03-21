@@ -37,7 +37,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('backup-destinations.generate-name');
 
     Route::resource('backup-destinations', BackupDestinationController::class)
-        ->only(['index', 'store', 'show', 'destroy']);
+        ->only(['index', 'store', 'show', 'update', 'destroy']);
 
     Route::resource('sites', SiteController::class)
         ->only(['index', 'store', 'show']);

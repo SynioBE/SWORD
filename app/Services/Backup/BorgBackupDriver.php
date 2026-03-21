@@ -32,6 +32,21 @@ class BorgBackupDriver implements BackupDriver
         return $result;
     }
 
+    public function dumpDatabases(SSHService $ssh, Server $server): SSHResult
+    {
+        $password = str_replace("'", "'\\''", $server->mysql_root_password);
+        $sites = $server->sites()->whereNotNull('db_name')->get();
+
+        $commands = ['mkdir -p /srv/sword/backups/mysql'];
+
+        foreach ($sites as $site) {
+            $dbName = $site->db_name;
+            $commands[] = "docker exec sword_mysql mysqldump -uroot -p'{$password}' --single-transaction --routines --triggers {$dbName} > /srv/sword/backups/mysql/{$dbName}.sql 2>&1";
+        }
+
+        return $ssh->execute(implode(' && ', $commands));
+    }
+
     public function createBackup(SSHService $ssh, BackupSchedule $schedule): SSHResult
     {
         $destination = $schedule->backupDestination;
@@ -41,7 +56,8 @@ class BorgBackupDriver implements BackupDriver
 
         $archiveName = $server->hostname.'-'.now()->format('Y-m-d\TH:i');
 
-        $command = $env['prefix']."borg create --stats --compression auto,zstd {$repo}::{$archiveName} /srv/sword 2>&1";
+        // Exclude raw MySQL data files since we dump databases separately
+        $command = $env['prefix']."borg create --stats --compression auto,zstd --exclude '/srv/sword/shared/mysql/data' {$repo}::{$archiveName} /srv/sword 2>&1";
 
         $result = $ssh->execute($command);
 

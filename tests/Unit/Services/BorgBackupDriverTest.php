@@ -3,9 +3,11 @@
 use App\Models\BackupDestination;
 use App\Models\Server;
 use App\Services\Backup\BorgBackupDriver;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
-pest()->extend(Tests\TestCase::class)
-    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class);
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class);
 
 test('builds correct repo path', function () {
     $driver = new BorgBackupDriver;

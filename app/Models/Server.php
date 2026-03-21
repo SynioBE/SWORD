@@ -81,6 +81,12 @@ class Server extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<Site, $this> */
+    public function sites(): HasMany
+    {
+        return $this->hasMany(Site::class);
+    }
+
     /** @return HasMany<BackupSchedule, $this> */
     public function backupSchedules(): HasMany
     {

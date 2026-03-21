@@ -10,6 +10,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use phpseclib3\Crypt\PublicKeyLoader;
+use phpseclib3\Net\SSH2;
 
 class BackupDestinationController extends Controller
 {
@@ -46,9 +48,60 @@ class BackupDestinationController extends Controller
 
     public function store(StoreBackupDestinationRequest $request): RedirectResponse
     {
-        $destination = $request->user()->backupDestinations()->create($request->validated());
+        $validated = $request->validated();
+
+        $connectionResult = $this->testConnection($validated);
+
+        $destination = $request->user()->backupDestinations()->create(array_merge($validated, [
+            'status' => $connectionResult['connected'] ? 'connected' : 'error',
+            'last_connected_at' => $connectionResult['connected'] ? now() : null,
+        ]));
+
+        if (! $connectionResult['connected']) {
+            return redirect()->route('backup-destinations.show', $destination)
+                ->with('error', $connectionResult['error']);
+        }
 
         return redirect()->route('backup-destinations.show', $destination);
+    }
+
+    /**
+     * @return array{connected: bool, error: string|null}
+     */
+    private function testConnection(array $config): array
+    {
+        try {
+            $ssh = new SSH2($config['host'], $config['port']);
+            $ssh->setTimeout(10);
+
+            if ($config['auth_method'] === 'ssh_key') {
+                $key = PublicKeyLoader::load($config['ssh_private_key']);
+                $authenticated = $ssh->login($config['username'], $key);
+            } else {
+                $authenticated = $ssh->login($config['username'], $config['password']);
+            }
+
+            if (! $authenticated) {
+                return ['connected' => false, 'error' => 'Authentication failed. Check your credentials.'];
+            }
+
+            $storagePath = rtrim($config['storage_path'], '/');
+
+            // Check if directory exists, create it if not
+            $result = $ssh->exec("test -d {$storagePath} && echo EXISTS || mkdir -p {$storagePath} && echo CREATED 2>&1");
+
+            if (! str_contains($result, 'EXISTS') && ! str_contains($result, 'CREATED')) {
+                $ssh->disconnect();
+
+                return ['connected' => false, 'error' => "Could not access or create storage path: {$storagePath}"];
+            }
+
+            $ssh->disconnect();
+
+            return ['connected' => true, 'error' => null];
+        } catch (\Throwable $e) {
+            return ['connected' => false, 'error' => 'Connection failed: '.$e->getMessage()];
+        }
     }
 
     public function show(Request $request, BackupDestination $backupDestination): Response
@@ -106,6 +159,27 @@ class BackupDestinationController extends Controller
             'schedules' => $schedules,
             'recentRuns' => $recentRuns,
         ]);
+    }
+
+    public function update(StoreBackupDestinationRequest $request, BackupDestination $backupDestination): RedirectResponse
+    {
+        abort_unless($backupDestination->user_id === $request->user()->id, 403);
+
+        $validated = $request->validated();
+
+        $connectionResult = $this->testConnection($validated);
+
+        $backupDestination->update(array_merge($validated, [
+            'status' => $connectionResult['connected'] ? 'connected' : 'error',
+            'last_connected_at' => $connectionResult['connected'] ? now() : $backupDestination->last_connected_at,
+        ]));
+
+        if (! $connectionResult['connected']) {
+            return redirect()->route('backup-destinations.show', $backupDestination)
+                ->with('error', $connectionResult['error']);
+        }
+
+        return redirect()->route('backup-destinations.show', $backupDestination);
     }
 
     public function destroy(Request $request, BackupDestination $backupDestination): RedirectResponse

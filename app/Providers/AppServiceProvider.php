@@ -2,13 +2,13 @@
 
 namespace App\Providers;
 
+use App\Services\Backup\BackupDriverManager;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
-use App\Services\Backup\BackupDriverManager;
 use Psr\Http\Client\ClientInterface;
 
 class AppServiceProvider extends ServiceProvider
