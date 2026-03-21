@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Server;
+use App\Services\Ansible;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Process;
@@ -23,9 +24,12 @@ class RunAnsible implements ShouldQueue
      */
     public function handle(): void
     {
-        $server = Server::firstOrFail($this->serverID);
+        $server = Server::findOrFail($this->serverID);
 
-        $this->testRawSSHConnection($server);
+        $ansible = new Ansible;
+        $ansible->RunPlaybook($this->serverID, 'provision.yml');
+
+        // $this->testRawSSHConnection($server);
     }
 
     /**

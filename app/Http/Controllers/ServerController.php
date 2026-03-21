@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Servers\StoreServerRequest;
 use App\Http\Resources\ServerResource;
+use App\Jobs\RunAnsible;
 use App\Models\BackupDestination;
 use App\Models\Server;
 use App\Services\ServerNameGenerator;
@@ -42,7 +43,7 @@ class ServerController extends Controller
     {
         $server = $request->user()->servers()->create($request->validated());
 
-        dispatch(new \App\Jobs\RunAnsible( $server->id ) );
+        dispatch(new RunAnsible($server->id));
 
         return redirect()->route('servers.show', $server);
     }

@@ -446,6 +446,16 @@ function deleteServer() {
                         </div>
                     </div>
                     <div class="flex flex-col gap-3 p-5">
+                        Public Key:
+                        <div
+                            class="group relative rounded-lg border border-sidebar-border/70 bg-muted/50 dark:border-sidebar-border"
+                        >
+                        <pre
+                        class="overflow-x-auto p-4 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-foreground"
+                        >{{ server.ssh_public_key }}</pre>
+                        </div>
+
+                        Command:
                         <div
                             class="group relative rounded-lg border border-sidebar-border/70 bg-muted/50 dark:border-sidebar-border"
                         >

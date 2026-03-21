@@ -52,30 +52,52 @@ class Ansible
     /**
      * Run a specific playbook.
      *
-     * @param  mixed  $serverID  the server ID, or empty to run for all servers.
+     * @param  mixed  $server  The Server model, server ID, or null to run for all servers.
      * @param  string|null  $playbookpath  Path to a playbook, relative to ./ansible-playbooks.
      *                                     Or full paths. Default to main.yml
+     * @param  array<string, mixed>  $extraVars  Extra variables to pass to the playbook via --extra-vars.
      */
-    public function RunPlaybook($server = null, ?string $playbookpath = null)
+    public function RunPlaybook($server = null, ?string $playbookpath = null, array $extraVars = [])
     {
         // Always make sure we have a fresh inventory.
         $this->GenerateInventory();
 
-        if(is_int($server)) {
+        if (is_int($server)) {
             $server = Server::findOrFail($server);
         }
         $LimitServer = 'all';
-        if($server) {
+        if ($server) {
             $LimitServer = 'server-'.$server->id.'-'.$server->name;
         }
 
-        if(empty($playbookpath)) {
-            $playbookpath = __DIR__ .'/../../ansible-playbooks/main.yml';
-        } elseif (!str_starts_with($playbookpath, '/')) {
-            $playbookpath = __DIR__ .'/../../ansible-playbooks/'.$playbookpath;
+        if (empty($playbookpath)) {
+            $playbookpath = __DIR__.'/../../ansible-playbooks/main.yml';
+        } elseif (! str_starts_with($playbookpath, '/')) {
+            $playbookpath = __DIR__.'/../../ansible-playbooks/'.$playbookpath;
         }
 
-        $result = Process::run("ansible-playbook -i /tmp/ansible-sword-inventory.yml $playbookpath --limit $LimitServer");
+        $extraVars = array_merge(
+            [
+                'callback_url' => \config('app.url'),
+                'server_name' => $server->name ?? null,
+                'server_id' => $server->id ?? null,
+                'server_hostname' => $server->hostname ?? null,
+                'ssh_public_key' => $server->ssh_public_key ?? null,
+                'timezone' => $server->timezone ?? null,
+                'sudo_password' => $server->sudo_password ?? null,
+                'mysql_root_password' => $server->mysql_root_password ?? null,
+            ],
+            $extraVars
+        );
+
+        $command = 'ANSIBLE_HOST_KEY_CHECKING=false ';
+        $command .= 'ansible-playbook';
+        $command .= ' -i /tmp/ansible-sword-inventory.yml';
+        $command .= " $playbookpath";
+        $command .= " --limit $LimitServer";
+        $command .= ' --extra-vars '.escapeshellarg(\json_encode($extraVars));
+
+        $result = Process::run($command);
 
         if ($result->successful()) {
             logger()->info("Successfully ran Ansible playbook $playbookpath for server $LimitServer.");
