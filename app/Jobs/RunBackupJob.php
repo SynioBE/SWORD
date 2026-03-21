@@ -39,7 +39,7 @@ class RunBackupJob implements ShouldQueue
             'started_at' => now(),
         ]);
 
-        $ssh = new SSHService($server);
+        $ssh = new SSHService($server, $this->timeout);
         $output = '';
 
         try {
@@ -53,11 +53,23 @@ class RunBackupJob implements ShouldQueue
                 $initResult = $driver->initializeRepo($ssh, $destination, $server);
                 $output .= "[init]\n".$initResult->output."\n".$initResult->stderr."\n";
 
-                $schedule->update(['repo_initialized' => true]);
+                $initSucceeded = $initResult->exitCode === 0
+                    || str_contains($initResult->output.$initResult->stderr, 'already exists')
+                    || str_contains($initResult->output.$initResult->stderr, 'already initialized');
+
+                if ($initSucceeded) {
+                    $schedule->update(['repo_initialized' => true]);
+                } else {
+                    throw new \RuntimeException("Repository initialization failed with exit code {$initResult->exitCode}");
+                }
             }
 
             $dumpResult = $driver->dumpDatabases($ssh, $server);
             $output .= "[dump]\n".$dumpResult->output."\n".$dumpResult->stderr."\n";
+
+            if ($dumpResult->exitCode !== 0) {
+                throw new \RuntimeException("Database dump failed with exit code {$dumpResult->exitCode}");
+            }
 
             $backupResult = $driver->createBackup($ssh, $schedule);
             $output .= "[backup]\n".$backupResult->output."\n".$backupResult->stderr."\n";
@@ -69,6 +81,10 @@ class RunBackupJob implements ShouldQueue
 
             $pruneResult = $driver->prune($ssh, $schedule);
             $output .= "[prune]\n".$pruneResult->output."\n".$pruneResult->stderr."\n";
+
+            if ($pruneResult->exitCode >= 2) {
+                throw new \RuntimeException("Prune command failed with exit code {$pruneResult->exitCode}");
+            }
 
             $archiveName = $this->parseArchiveName($backupResult->output);
             $sizeBytes = $this->parseSizeBytes($backupResult->output);

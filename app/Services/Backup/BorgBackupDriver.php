@@ -13,7 +13,11 @@ class BorgBackupDriver implements BackupDriver
 {
     public function ensureInstalled(SSHService $ssh): void
     {
-        $ssh->execute('which borg || sudo apt-get install -y borgbackup sshpass');
+        $result = $ssh->execute('which borg || sudo apt-get install -y borgbackup sshpass');
+
+        if ($result->exitCode !== 0) {
+            throw new \RuntimeException("Failed to install borgbackup: {$result->stderr}");
+        }
     }
 
     public function initializeRepo(SSHService $ssh, BackupDestination $destination, Server $server): SSHResult
@@ -21,7 +25,7 @@ class BorgBackupDriver implements BackupDriver
         $repo = $this->buildRepoPath($destination, $server);
         $env = $this->buildBorgEnv($destination);
 
-        $command = $env['prefix']."borg init --encryption=none {$repo} 2>&1";
+        $command = $env['prefix'].'borg init --encryption=none '.escapeshellarg($repo).' 2>&1';
 
         $result = $ssh->execute($command);
 
@@ -40,8 +44,9 @@ class BorgBackupDriver implements BackupDriver
         $commands = ['mkdir -p /srv/sword/backups/mysql'];
 
         foreach ($sites as $site) {
-            $dbName = $site->db_name;
-            $commands[] = "docker exec sword_mysql mysqldump -uroot -p'{$password}' --single-transaction --routines --triggers {$dbName} > /srv/sword/backups/mysql/{$dbName}.sql 2>&1";
+            $dbName = escapeshellarg($site->db_name);
+            $escapedDbName = $site->db_name;
+            $commands[] = "docker exec sword_mysql mysqldump -uroot -p'{$password}' --single-transaction --routines --triggers {$dbName} > /srv/sword/backups/mysql/{$escapedDbName}.sql 2>&1";
         }
 
         return $ssh->execute(implode(' && ', $commands));
@@ -57,7 +62,8 @@ class BorgBackupDriver implements BackupDriver
         $archiveName = $server->hostname.'-'.now()->format('Y-m-d\TH:i');
 
         // Exclude raw MySQL data files since we dump databases separately
-        $command = $env['prefix']."borg create --stats --compression auto,zstd --exclude '/srv/sword/shared/mysql/data' {$repo}::{$archiveName} /srv/sword 2>&1";
+        $repoArchive = escapeshellarg($repo.'::'.$archiveName);
+        $command = $env['prefix'].'borg create --stats --compression auto,zstd --exclude '.escapeshellarg('/srv/sword/shared/mysql/data').' '.$repoArchive.' /srv/sword 2>&1';
 
         $result = $ssh->execute($command);
 
@@ -75,10 +81,11 @@ class BorgBackupDriver implements BackupDriver
         $repo = $this->buildRepoPath($destination, $server);
         $env = $this->buildBorgEnv($destination);
 
-        $keepLast = $schedule->retention_count;
+        $keepLast = (int) $schedule->retention_count;
+        $escapedRepo = escapeshellarg($repo);
 
-        $command = $env['prefix']."borg prune --keep-last={$keepLast} --stats {$repo} 2>&1 && "
-            .$env['prefix']."borg compact {$repo} 2>&1";
+        $command = $env['prefix']."borg prune --keep-last={$keepLast} --stats {$escapedRepo} 2>&1 && "
+            .$env['prefix']."borg compact {$escapedRepo} 2>&1";
 
         $result = $ssh->execute($command);
 
@@ -92,8 +99,12 @@ class BorgBackupDriver implements BackupDriver
     public function buildRepoPath(BackupDestination $destination, Server $server): string
     {
         $storagePath = rtrim($destination->storage_path, '/');
+        $username = $destination->username;
+        $host = $destination->host;
+        $port = (int) $destination->port;
+        $hostname = $server->hostname;
 
-        return "ssh://{$destination->username}@{$destination->host}:{$destination->port}{$storagePath}/{$server->hostname}";
+        return "ssh://{$username}@{$host}:{$port}{$storagePath}/{$hostname}";
     }
 
     /**
@@ -102,17 +113,19 @@ class BorgBackupDriver implements BackupDriver
     public function buildBorgEnv(BackupDestination $destination): array
     {
         $cleanup = null;
+        $port = (int) $destination->port;
 
         if ($destination->auth_method === 'ssh_key') {
             $keyPath = '/tmp/sword_borg_key_'.bin2hex(random_bytes(4));
-            $cleanup = "rm -f {$keyPath}";
+            $escapedKeyPath = escapeshellarg($keyPath);
+            $cleanup = "rm -f {$escapedKeyPath}";
 
             $escapedKey = str_replace("'", "'\\''", $destination->ssh_private_key);
-            $prefix = "echo '{$escapedKey}' > {$keyPath} && chmod 600 {$keyPath} && "
-                ."BORG_RSH=\"ssh -i {$keyPath} -p {$destination->port} -o StrictHostKeyChecking=accept-new\" ";
+            $prefix = "echo '{$escapedKey}' > {$escapedKeyPath} && chmod 600 {$escapedKeyPath} && "
+                ."BORG_RSH=\"ssh -i {$escapedKeyPath} -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         } else {
             $escapedPassword = str_replace("'", "'\\''", $destination->password);
-            $prefix = "BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$destination->port} -o StrictHostKeyChecking=accept-new\" ";
+            $prefix = "BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         }
 
         return [

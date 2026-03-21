@@ -78,11 +78,27 @@ class DispatchDueBackups extends Command
 
         $query = $schedule->backupRuns()->where('status', 'completed');
 
-        return match ($schedule->frequency) {
-            'daily' => $query->whereDate('created_at', $now->toDateString())->exists(),
-            'weekly' => $query->where('created_at', '>=', $now->startOfWeek())->exists(),
-            'monthly' => $query->where('created_at', '>=', $now->startOfMonth())->exists(),
-            default => false,
+        // Compute period boundaries in server timezone, then convert to UTC for querying
+        [$periodStart, $periodEnd] = match ($schedule->frequency) {
+            'daily' => [
+                $now->copy()->startOfDay()->utc(),
+                $now->copy()->endOfDay()->utc(),
+            ],
+            'weekly' => [
+                $now->copy()->startOfWeek()->utc(),
+                $now->copy()->endOfWeek()->utc(),
+            ],
+            'monthly' => [
+                $now->copy()->startOfMonth()->utc(),
+                $now->copy()->endOfMonth()->utc(),
+            ],
+            default => [null, null],
         };
+
+        if ($periodStart === null) {
+            return false;
+        }
+
+        return $query->whereBetween('created_at', [$periodStart, $periodEnd])->exists();
     }
 }

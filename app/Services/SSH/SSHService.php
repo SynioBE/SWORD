@@ -12,12 +12,13 @@ class SSHService
 
     public function __construct(
         private readonly Server $server,
+        private readonly int $timeout = 3600,
     ) {}
 
     public function connect(): void
     {
         $this->connection = new SSH2($this->server->ip_address, $this->server->ssh_port);
-        $this->connection->setTimeout(300);
+        $this->connection->setTimeout($this->timeout);
 
         $key = PublicKeyLoader::load($this->server->ssh_private_key);
 

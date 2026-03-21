@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'server_id',
@@ -50,5 +51,11 @@ class BackupSchedule extends Model
     public function backupRuns(): HasMany
     {
         return $this->hasMany(BackupRun::class);
+    }
+
+    /** @return HasOne<BackupRun, $this> */
+    public function latestBackupRun(): HasOne
+    {
+        return $this->hasOne(BackupRun::class)->latestOfMany();
     }
 }

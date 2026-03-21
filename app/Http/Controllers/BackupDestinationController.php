@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\BackupDestinations\StoreBackupDestinationRequest;
+use App\Http\Requests\BackupDestinations\UpdateBackupDestinationRequest;
 use App\Models\BackupDestination;
 use App\Services\ServerNameGenerator;
 use Illuminate\Http\JsonResponse;
@@ -86,9 +87,10 @@ class BackupDestinationController extends Controller
             }
 
             $storagePath = rtrim($config['storage_path'], '/');
+            $escapedPath = escapeshellarg($storagePath);
 
             // Check if directory exists, create it if not
-            $result = $ssh->exec("test -d {$storagePath} && echo EXISTS || mkdir -p {$storagePath} && echo CREATED 2>&1");
+            $result = $ssh->exec("test -d {$escapedPath} && echo EXISTS || mkdir -p {$escapedPath} && echo CREATED 2>&1");
 
             if (! str_contains($result, 'EXISTS') && ! str_contains($result, 'CREATED')) {
                 $ssh->disconnect();
@@ -161,11 +163,20 @@ class BackupDestinationController extends Controller
         ]);
     }
 
-    public function update(StoreBackupDestinationRequest $request, BackupDestination $backupDestination): RedirectResponse
+    public function update(UpdateBackupDestinationRequest $request, BackupDestination $backupDestination): RedirectResponse
     {
         abort_unless($backupDestination->user_id === $request->user()->id, 403);
 
         $validated = $request->validated();
+
+        // Preserve existing credentials when empty strings are submitted
+        if ($backupDestination->auth_method === 'password' && empty($validated['password'])) {
+            $validated['password'] = $backupDestination->password;
+        }
+
+        if ($backupDestination->auth_method === 'ssh_key' && empty($validated['ssh_private_key'])) {
+            $validated['ssh_private_key'] = $backupDestination->ssh_private_key;
+        }
 
         $connectionResult = $this->testConnection($validated);
 

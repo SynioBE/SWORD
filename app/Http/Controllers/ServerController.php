@@ -60,7 +60,7 @@ class ServerController extends Controller
         );
 
         $backupSchedules = $server->backupSchedules()
-            ->with('backupDestination')
+            ->with(['backupDestination', 'latestBackupRun'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn ($schedule) => [
@@ -74,7 +74,7 @@ class ServerController extends Controller
                 'retention_count' => $schedule->retention_count,
                 'is_enabled' => $schedule->is_enabled,
                 'created_at' => $schedule->created_at->toIso8601String(),
-                'last_run' => $schedule->backupRuns()->latest()->first()?->only([
+                'last_run' => $schedule->latestBackupRun?->only([
                     'id', 'status', 'archive_name', 'size_bytes', 'duration_seconds', 'completed_at',
                 ]),
             ]);
