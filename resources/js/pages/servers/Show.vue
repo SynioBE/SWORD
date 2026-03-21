@@ -32,17 +32,17 @@ import {
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
+import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
 import {
     index as serversIndex,
     show as serversShow,
     destroy as serversDestroy,
 } from '@/routes/servers';
-import type { BreadcrumbItem } from '@/types';
-import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
 import {
     store as backupSchedulesStore,
     destroy as backupSchedulesDestroy,
 } from '@/routes/servers/backup-schedules';
+import type { BreadcrumbItem } from '@/types';
 
 interface BackupScheduleRow {
     id: number;
