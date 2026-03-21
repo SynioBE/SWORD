@@ -34,6 +34,22 @@ services:
             - mysql
             - redis
             - mailpit
+    scheduler:
+        image: 'sail-8.5/app'
+        command: 'php artisan schedule:work'
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+            - redis
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        secrets:
+            - do-api
+            - hetzner-api
     mysql:
         image: 'mysql:8.4'
         ports:

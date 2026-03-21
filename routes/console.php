@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\PingServers;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -9,3 +10,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('backup:dispatch')->everyMinute();
+Schedule::command(PingServers::class)->everyMinute();

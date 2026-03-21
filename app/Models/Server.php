@@ -30,6 +30,8 @@ use phpseclib3\Crypt\EC;
     'current_step',
     'provision_log',
     'provisioned_at',
+    'is_online',
+    'last_pinged_at',
 ])]
 class Server extends Model
 {
@@ -46,6 +48,8 @@ class Server extends Model
             'ssh_private_key' => 'encrypted',
             'sudo_password' => 'encrypted',
             'mysql_root_password' => 'encrypted',
+            'is_online' => 'boolean',
+            'last_pinged_at' => 'datetime',
         ];
     }
 
