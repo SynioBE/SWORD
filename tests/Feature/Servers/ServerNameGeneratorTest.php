@@ -5,7 +5,7 @@ use App\Services\ServerNameGenerator;
 
 test('guests cannot access generate-name endpoint', function () {
     $this->getJson(route('servers.generate-name'))
-        ->assertRedirect(route('login'));
+        ->assertUnauthorized();
 });
 
 test('authenticated users can generate a server name', function () {

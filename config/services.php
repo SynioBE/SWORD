@@ -14,6 +14,14 @@ return [
     |
     */
 
+    'digitalocean' => [
+        'token' => env('DIGITALOCEAN_TOKEN'),
+    ],
+
+    'hetzner' => [
+        'token' => env('HETZNER_TOKEN'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

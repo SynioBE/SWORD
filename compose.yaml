@@ -1,3 +1,9 @@
+secrets:
+    do-api:
+        file: secrets/do-api.txt
+    hetzner-api:
+        file: secrets/hetzner-api.txt
+
 services:
     laravel.test:
         build:
@@ -17,6 +23,9 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+        secrets:
+            - do-api
+            - hetzner-api
         volumes:
             - '.:/var/www/html'
         networks:
@@ -82,13 +91,36 @@ services:
             - mysql
     cloudflared:
         image: 'cloudflare/cloudflared:latest'
-        command: 'tunnel --metrics 0.0.0.0:2000 --no-autoupdate --url http://laravel.test:80'
+        command: 'tunnel --protocol http2 --metrics 0.0.0.0:2000 --no-autoupdate --url http://laravel.test:80'
         ports:
             - '${FORWARD_CLOUDFLARED_METRICS_PORT:-2000}:2000'
         networks:
             - sail
         depends_on:
             - laravel.test
+    netdata:
+        image: netdata/netdata:stable
+        container_name: netdata-sail
+        hostname: netdata-sail
+        ports:
+            - '19999:19999'
+        cap_add:
+            - SYS_PTRACE
+            - SYS_ADMIN
+        security_opt:
+            - apparmor:unconfined
+        volumes:
+            - 'netdataconfig:/etc/netdata'
+            - 'netdatalib:/var/lib/netdata'
+            - 'netdatacache:/var/cache/netdata'
+            - '/etc/passwd:/host/etc/passwd:ro'
+            - '/etc/group:/host/etc/group:ro'
+            - '/proc:/host/proc:ro'
+            - '/sys:/host/sys:ro'
+            - '/etc/os-release:/host/etc/os-release:ro'
+            - '/var/run/docker.sock:/var/run/docker.sock:ro'
+        networks:
+            - sail
 networks:
     sail:
         driver: bridge
@@ -97,3 +129,6 @@ volumes:
         driver: local
     sail-redis:
         driver: local
+    netdataconfig:
+    netdatalib:
+    netdatacache:

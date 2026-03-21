@@ -413,7 +413,7 @@ services:
       - /srv/sword/shared/mysql/data:/var/lib/mysql
       - /srv/sword/shared/mysql/my.cnf:/etc/my.cnf
     networks:
-      - db_network
+      - sword_network
 
   ofelia:
     image: mcuadros/ofelia:latest
@@ -425,13 +425,23 @@ services:
     networks:
       - sword_network
 
+  dockhand:
+    image: fnsys/dockhand:latest
+    container_name: dockhand
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockhand_data:/app/data
+
+volumes:
+  dockhand_data:
+
 networks:
   sword_network:
     name: sword_network
     external: true
-  db_network:
-    name: db_network
-    driver: bridge
 COMPOSEEOF
 
 docker compose -f /srv/sword/shared/docker-compose.yml up -d

@@ -29,17 +29,28 @@ The defaults should be fine in most cases.
 ./vendor/bin/sail artisan migrate:fresh --seed
 ```
 
+# Shortcuts
+```shell
+# php artisan migrate:fresh --seed
+composer mfs 
+# php artisan migrate:fresh
+composer mf
+
+```
+
 ## Install NPM dependencies
 
 ```shell
-sail npm install
+./vendor/bin/sail npm install
 ```
 
 ## Start Vite with Hot Module Reloading
 
 ```shell
-sail npm run dev
+./vendor/bin/sail npm run dev
 ```
+
+The above steps are performed by the [setup](setup.sh) script.
 
 ## Connect to the Laravel application
 
@@ -60,4 +71,4 @@ To provision a server, the server needs to talk to your application. Because you
 
 But we can use a `cloudflared` tunnel for this. Such a tunnel is already running as part of the Docker Compose stack.
 
-Before provisioning a server, you have to run `sail artisan tunnel:sync` to update the `APP_URL` based on the current `cloudflared` tunnel that has been created (the hostname will change randomly each time the container is restarted). After that, the generated provisioning script will contain the correct tunneled URL.
+Before provisioning a server, you have to run `./vendor/bin/sail artisan tunnel:sync` to update the `APP_URL` based on the current `cloudflared` tunnel that has been created (the hostname will change randomly each time the container is restarted). After that, the generated provisioning script will contain the correct tunneled URL.
