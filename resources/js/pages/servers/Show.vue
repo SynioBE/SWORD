@@ -32,14 +32,17 @@ import {
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/provision-steps';
-import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
-import { store as backupSchedulesStore, destroy as backupSchedulesDestroy } from '@/routes/servers/backup-schedules';
-import type { BreadcrumbItem } from '@/types';
 import {
     index as serversIndex,
     show as serversShow,
     destroy as serversDestroy,
 } from '@/routes/servers';
+import type { BreadcrumbItem } from '@/types';
+import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
+import {
+    store as backupSchedulesStore,
+    destroy as backupSchedulesDestroy,
+} from '@/routes/servers/backup-schedules';
 
 interface BackupScheduleRow {
     id: number;
@@ -77,6 +80,8 @@ interface ServerDetail {
     created_at: string;
     wget_command: string;
     callback_signature: string;
+    is_online: boolean;
+    last_pinged_at: string | null;
 }
 
 const props = defineProps<{
@@ -113,6 +118,7 @@ function startPolling() {
     if (pollInterval) {
         return;
     }
+
     pollInterval = setInterval(() => {
         router.reload({ only: ['server'] });
     }, 3000);
@@ -187,15 +193,15 @@ function formatTime(iso: string): string {
 // The index of the last logged step (by log order, not step order) — supports re-runs
 const lastCompletedIndex = computed(() => {
     if (isProvisioned.value) {
-return STEP_KEYS.length - 1;
-}
+        return STEP_KEYS.length - 1;
+    }
 
     for (let i = props.server.provision_log.length - 1; i >= 0; i--) {
         const idx = STEP_KEYS.indexOf(props.server.provision_log[i].step);
 
         if (idx !== -1) {
-return idx;
-}
+            return idx;
+        }
     }
 
     return -1;
@@ -203,8 +209,8 @@ return idx;
 
 function isStepCompleted(index: number): boolean {
     if (isProvisioned.value) {
-return true;
-}
+        return true;
+    }
 
     // A step is completed if a later or equal step was logged
     return index <= lastCompletedIndex.value;
@@ -217,12 +223,12 @@ const hasStarted = computed(() =>
 
 function isStepActive(index: number): boolean {
     if (isProvisioned.value) {
-return false;
-}
+        return false;
+    }
 
     if (!hasStarted.value) {
-return false;
-}
+        return false;
+    }
 
     // Show spinner on the step right after the last completed one
     const nextIndex = lastCompletedIndex.value + 1;
@@ -236,12 +242,12 @@ const completedStepKeys = computed(
 
 const progressPercent = computed(() => {
     if (isProvisioned.value) {
-return 100;
-}
+        return 100;
+    }
 
     if (isPending.value) {
-return 0;
-}
+        return 0;
+    }
 
     const done = STEP_KEYS.filter((k) => completedStepKeys.value.has(k)).length;
 
@@ -295,11 +301,14 @@ function confirmDeleteSchedule(schedule: BackupScheduleRow) {
 
 function deleteSchedule() {
     if (!scheduleToDelete.value) {
-return;
-}
+        return;
+    }
 
     deleteScheduleForm.delete(
-        backupSchedulesDestroy({ server: props.server.id, backup_schedule: scheduleToDelete.value.id }).url,
+        backupSchedulesDestroy({
+            server: props.server.id,
+            backup_schedule: scheduleToDelete.value.id,
+        }).url,
         {
             onSuccess: () => {
                 showDeleteScheduleDialog.value = false;
@@ -309,7 +318,15 @@ return;
     );
 }
 
-const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dayNames = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+];
 
 function scheduleLabel(schedule: BackupScheduleRow): string {
     if (schedule.frequency === 'weekly' && schedule.day_of_week !== null) {
@@ -371,6 +388,22 @@ function deleteServer() {
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <Badge
+                        v-if="isProvisioned"
+                        variant="outline"
+                        class="mt-1 gap-1.5"
+                    >
+                        <span
+                            class="size-1.5 rounded-full"
+                            :class="
+                                server.is_online
+                                    ? 'bg-green-500'
+                                    : 'animate-pulse bg-red-500'
+                            "
+                        />
+                        {{ server.is_online ? 'Online' : 'Offline' }}
+                    </Badge>
+
                     <Badge :variant="statusVariant(server.status)" class="mt-1">
                         <CheckCircle2 v-if="isProvisioned" class="size-3" />
                         <Loader2
@@ -631,7 +664,9 @@ function deleteServer() {
                     <div
                         class="flex items-center gap-3 border-b border-sidebar-border/70 px-5 py-4 dark:border-sidebar-border"
                     >
-                        <Calendar class="size-5 shrink-0 text-muted-foreground" />
+                        <Calendar
+                            class="size-5 shrink-0 text-muted-foreground"
+                        />
                         <p class="text-sm font-medium">Backup Schedules</p>
                         <span class="ml-auto">
                             <Button
@@ -645,32 +680,52 @@ function deleteServer() {
                         </span>
                     </div>
 
-                    <div v-if="backupSchedules.length === 0" class="px-5 py-8 text-center text-sm text-muted-foreground">
+                    <div
+                        v-if="backupSchedules.length === 0"
+                        class="px-5 py-8 text-center text-sm text-muted-foreground"
+                    >
                         <template v-if="backupDestinations.length === 0">
-                            Create a backup destination first to schedule backups.
+                            Create a backup destination first to schedule
+                            backups.
                         </template>
                         <template v-else>
                             No backup schedules configured for this server.
                         </template>
                     </div>
 
-                    <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
+                    <div
+                        v-else
+                        class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30"
+                    >
                         <div
                             v-for="schedule in backupSchedules"
                             :key="schedule.id"
                             class="flex items-center justify-between px-5 py-3"
                         >
                             <div>
-                                <p class="text-sm font-medium">{{ schedule.destination_name }}</p>
+                                <p class="text-sm font-medium">
+                                    {{ schedule.destination_name }}
+                                </p>
                                 <p class="mt-0.5 text-xs text-muted-foreground">
                                     {{ scheduleLabel(schedule) }}
                                     <span class="mx-1.5">·</span>
-                                    Retain {{ schedule.retention_count }} backups
+                                    Retain
+                                    {{ schedule.retention_count }} backups
                                 </p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <Badge :variant="schedule.is_enabled ? 'default' : 'outline'">
-                                    {{ schedule.is_enabled ? 'Enabled' : 'Disabled' }}
+                                <Badge
+                                    :variant="
+                                        schedule.is_enabled
+                                            ? 'default'
+                                            : 'outline'
+                                    "
+                                >
+                                    {{
+                                        schedule.is_enabled
+                                            ? 'Enabled'
+                                            : 'Disabled'
+                                    }}
                                 </Badge>
                                 <Button
                                     variant="ghost"
@@ -701,7 +756,11 @@ function deleteServer() {
                         class="flex flex-col gap-4 py-2"
                     >
                         <div class="flex flex-col gap-1.5">
-                            <label class="text-sm font-medium" for="schedule-dest">Backup Destination</label>
+                            <label
+                                class="text-sm font-medium"
+                                for="schedule-dest"
+                                >Backup Destination</label
+                            >
                             <select
                                 id="schedule-dest"
                                 v-model="scheduleForm.backup_destination_id"
@@ -717,12 +776,20 @@ function deleteServer() {
                                     {{ dest.name }}
                                 </option>
                             </select>
-                            <InputError :message="scheduleForm.errors.backup_destination_id" />
+                            <InputError
+                                :message="
+                                    scheduleForm.errors.backup_destination_id
+                                "
+                            />
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-sm font-medium" for="schedule-frequency">Frequency</label>
+                                <label
+                                    class="text-sm font-medium"
+                                    for="schedule-frequency"
+                                    >Frequency</label
+                                >
                                 <select
                                     id="schedule-frequency"
                                     v-model="scheduleForm.frequency"
@@ -733,38 +800,66 @@ function deleteServer() {
                                     <option value="weekly">Weekly</option>
                                     <option value="monthly">Monthly</option>
                                 </select>
-                                <InputError :message="scheduleForm.errors.frequency" />
+                                <InputError
+                                    :message="scheduleForm.errors.frequency"
+                                />
                             </div>
 
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-sm font-medium" for="schedule-time">Time</label>
+                                <label
+                                    class="text-sm font-medium"
+                                    for="schedule-time"
+                                    >Time</label
+                                >
                                 <Input
                                     id="schedule-time"
                                     v-model="scheduleForm.time"
                                     type="time"
                                     :disabled="scheduleForm.processing"
                                 />
-                                <InputError :message="scheduleForm.errors.time" />
+                                <InputError
+                                    :message="scheduleForm.errors.time"
+                                />
                             </div>
                         </div>
 
-                        <div v-if="scheduleForm.frequency === 'weekly'" class="flex flex-col gap-1.5">
-                            <label class="text-sm font-medium" for="schedule-dow">Day of Week</label>
+                        <div
+                            v-if="scheduleForm.frequency === 'weekly'"
+                            class="flex flex-col gap-1.5"
+                        >
+                            <label
+                                class="text-sm font-medium"
+                                for="schedule-dow"
+                                >Day of Week</label
+                            >
                             <select
                                 id="schedule-dow"
                                 v-model.number="scheduleForm.day_of_week"
                                 :disabled="scheduleForm.processing"
                                 class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                <option v-for="(name, idx) in dayNames" :key="idx" :value="idx">
+                                <option
+                                    v-for="(name, idx) in dayNames"
+                                    :key="idx"
+                                    :value="idx"
+                                >
                                     {{ name }}
                                 </option>
                             </select>
-                            <InputError :message="scheduleForm.errors.day_of_week" />
+                            <InputError
+                                :message="scheduleForm.errors.day_of_week"
+                            />
                         </div>
 
-                        <div v-if="scheduleForm.frequency === 'monthly'" class="flex flex-col gap-1.5">
-                            <label class="text-sm font-medium" for="schedule-dom">Day of Month</label>
+                        <div
+                            v-if="scheduleForm.frequency === 'monthly'"
+                            class="flex flex-col gap-1.5"
+                        >
+                            <label
+                                class="text-sm font-medium"
+                                for="schedule-dom"
+                                >Day of Month</label
+                            >
                             <Input
                                 id="schedule-dom"
                                 v-model.number="scheduleForm.day_of_month"
@@ -773,11 +868,17 @@ function deleteServer() {
                                 max="28"
                                 :disabled="scheduleForm.processing"
                             />
-                            <InputError :message="scheduleForm.errors.day_of_month" />
+                            <InputError
+                                :message="scheduleForm.errors.day_of_month"
+                            />
                         </div>
 
                         <div class="flex flex-col gap-1.5">
-                            <label class="text-sm font-medium" for="schedule-retention">Retention count</label>
+                            <label
+                                class="text-sm font-medium"
+                                for="schedule-retention"
+                                >Retention count</label
+                            >
                             <Input
                                 id="schedule-retention"
                                 v-model.number="scheduleForm.retention_count"
@@ -786,7 +887,9 @@ function deleteServer() {
                                 max="365"
                                 :disabled="scheduleForm.processing"
                             />
-                            <InputError :message="scheduleForm.errors.retention_count" />
+                            <InputError
+                                :message="scheduleForm.errors.retention_count"
+                            />
                         </div>
 
                         <DialogFooter class="pt-2">
@@ -798,7 +901,10 @@ function deleteServer() {
                             >
                                 Cancel
                             </Button>
-                            <Button type="submit" :disabled="scheduleForm.processing">
+                            <Button
+                                type="submit"
+                                :disabled="scheduleForm.processing"
+                            >
                                 <Loader2
                                     v-if="scheduleForm.processing"
                                     class="size-4 animate-spin"
@@ -816,11 +922,17 @@ function deleteServer() {
                     <DialogHeader>
                         <DialogTitle>No backup destinations</DialogTitle>
                         <DialogDescription>
-                            You need to create a backup destination before you can schedule backups. Backup destinations define where your backups are stored.
+                            You need to create a backup destination before you
+                            can schedule backups. Backup destinations define
+                            where your backups are stored.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" @click="showNoDestinationsDialog = false">Cancel</Button>
+                        <Button
+                            variant="outline"
+                            @click="showNoDestinationsDialog = false"
+                            >Cancel</Button
+                        >
                         <Link :href="backupDestinationsIndex()">
                             <Button>Go to Backup Destinations</Button>
                         </Link>
@@ -834,17 +946,25 @@ function deleteServer() {
                     <DialogHeader>
                         <DialogTitle>Delete backup schedule</DialogTitle>
                         <DialogDescription>
-                            Are you sure you want to remove this backup schedule? This action cannot be undone.
+                            Are you sure you want to remove this backup
+                            schedule? This action cannot be undone.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" @click="showDeleteScheduleDialog = false">Cancel</Button>
+                        <Button
+                            variant="outline"
+                            @click="showDeleteScheduleDialog = false"
+                            >Cancel</Button
+                        >
                         <Button
                             variant="destructive"
                             :disabled="deleteScheduleForm.processing"
                             @click="deleteSchedule"
                         >
-                            <Loader2 v-if="deleteScheduleForm.processing" class="size-4 animate-spin" />
+                            <Loader2
+                                v-if="deleteScheduleForm.processing"
+                                class="size-4 animate-spin"
+                            />
                             Delete schedule
                         </Button>
                     </DialogFooter>
