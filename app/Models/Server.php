@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 use phpseclib3\Crypt\EC;
+use App\Models\Site;
 
 #[Fillable([
     'user_id',
@@ -89,6 +90,12 @@ class Server extends Model
     public function backupSchedules(): HasMany
     {
         return $this->hasMany(BackupSchedule::class);
+    }
+
+    /** @return HasMany<Site, $this> */
+    public function sites(): HasMany
+    {
+        return $this->hasMany(Site::class);
     }
 
     public function isProvisioning(): bool

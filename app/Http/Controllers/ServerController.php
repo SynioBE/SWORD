@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\Site;
 
 class ServerController extends Controller
 {
@@ -85,6 +86,18 @@ class ServerController extends Controller
                 'name' => $d->name,
             ]);
 
+        $sites = $server->sites()
+                        ->orderByDesc('created_at')
+                        ->get()
+                        ->map(fn (Site $site) => [
+                            'id' => $site->id,
+                            'domain' => $site->domain,
+                            'php_version' => $site->php_version,
+                            'status' => $site->status,
+                            'installed_at' => $site->installed_at?->toIso8601String(),
+                            'created_at' => $site->created_at->toIso8601String(),
+                        ]);
+
         return Inertia::render('servers/Show', [
             'server' => array_merge((new ServerResource($server))->resolve(), [
                 'callback_signature' => $server->callback_signature,
@@ -92,6 +105,7 @@ class ServerController extends Controller
             ]),
             'backupSchedules' => $backupSchedules,
             'backupDestinations' => $backupDestinations,
+            'sites' => $sites,
         ]);
     }
 
