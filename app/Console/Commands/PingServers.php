@@ -8,14 +8,15 @@ use Illuminate\Console\Command;
 class PingServers extends Command
 {
     protected $signature = 'servers:ping';
+
     protected $description = 'Check online status of all provisioned servers via TCP';
 
     public function handle(): void
     {
         $servers = Server::query()
-                         ->where('status', 'provisioned')
-                         ->whereNotNull('ip_address')
-                         ->get();
+            ->where('status', 'provisioned')
+            ->whereNotNull('ip_address')
+            ->get();
 
         if ($servers->isEmpty()) {
             return;
