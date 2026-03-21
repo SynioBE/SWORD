@@ -105,6 +105,11 @@ class Ansible
         } else {
             logger()->error("Failed to run Ansible playbook $playbookpath for server $LimitServer. Error: ".$result->errorOutput());
         }
-        echo $result->output();
+
+        logger()->debug("Ansible playbook output for server $LimitServer.", [
+            'playbook' => "$playbookpath-$LimitServer",
+            'output' => $result->output(),
+        ]);
+
     }
 }

@@ -43,6 +43,7 @@ class ServerController extends Controller
     {
         $server = $request->user()->servers()->create($request->validated());
 
+        // @TODO This will be a problem, if it's executed before adding the public key.
         dispatch(new RunAnsible($server->id));
 
         return redirect()->route('servers.show', $server);
