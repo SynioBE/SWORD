@@ -72,3 +72,43 @@ To provision a server, the server needs to talk to your application. Because you
 But we can use a `cloudflared` tunnel for this. Such a tunnel is already running as part of the Docker Compose stack.
 
 Before provisioning a server, you have to run `./vendor/bin/sail artisan tunnel:sync` to update the `APP_URL` based on the current `cloudflared` tunnel that has been created (the hostname will change randomly each time the container is restarted). After that, the generated provisioning script will contain the correct tunneled URL.
+
+
+# Cloudflare Integration
+
+Configure one or more Cloudflare accounts under **Settings → Integrations**. Both API Token and Global API Key auth are supported.
+
+## DNS record operations (PHP)
+
+```php
+use App\Services\Cloudflare\CloudflareService;
+use App\Actions\Cloudflare\UpsertCloudflareDnsRecord;
+use GuzzleHttp\Psr7\HttpFactory;
+use Psr\Http\Client\ClientInterface;
+
+// Build the service from an Integration model
+$service = new CloudflareService(
+    httpClient: app(ClientInterface::class),
+    httpFactory: new HttpFactory,
+    credentials: $integration->credentials,
+);
+
+// Auto-detect the zone from a domain
+$zone   = $service->findZoneForDomain($site->domain);
+$zoneId = $zone['id'];
+
+// Upsert (create or update) — recommended for site creation
+(new UpsertCloudflareDnsRecord)->handle(
+    service: $service,
+    zoneId: $zoneId,
+    name: $site->domain,
+    type: 'A',               // 'A', 'CNAME', or 'both'
+    content: $server->ip_address,
+    proxied: true,
+    ttl: 1,                  // 1 = Auto
+    cnameContent: null,      // required when type = 'both'
+);
+
+// Delete by record ID
+$service->deleteDnsRecord(zoneId: $zoneId, recordId: 'rec-abc123');
+```

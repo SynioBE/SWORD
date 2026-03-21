@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\IntegrationsController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use Illuminate\Support\Facades\Route;
@@ -21,4 +22,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
+
+    Route::get('settings/integrations', [IntegrationsController::class, 'index'])->name('integrations.index');
+    Route::post('settings/integrations', [IntegrationsController::class, 'store'])->name('integrations.store');
+    Route::patch('settings/integrations/{integration}', [IntegrationsController::class, 'update'])->name('integrations.update');
+    Route::delete('settings/integrations/{integration}', [IntegrationsController::class, 'destroy'])->name('integrations.destroy');
 });
