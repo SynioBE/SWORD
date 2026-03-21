@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Sites\StoreSiteRequest;
 use App\Http\Resources\SiteResource;
+use App\Jobs\BackupSiteJob;
 use App\Jobs\DeleteSiteBackupsJob;
 use App\Jobs\DeleteSiteJob;
 use App\Jobs\InstallSiteJob;
@@ -94,6 +95,23 @@ class SiteController extends Controller
             ]),
             'backupRuns' => $backupRuns,
         ]);
+    }
+
+    public function backup(Request $request, Site $site): RedirectResponse
+    {
+        abort_unless($site->user_id === $request->user()->id, 403);
+
+        $schedule = $site->server->backupSchedules()->first();
+
+        if (! $schedule) {
+            return back()->withErrors([
+                'backup' => 'No backup destination is configured for this server. Add a backup schedule first.',
+            ]);
+        }
+
+        BackupSiteJob::dispatch($site, $schedule);
+
+        return back();
     }
 
     public function restore(Request $request, Site $site, BackupRun $backupRun): RedirectResponse

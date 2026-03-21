@@ -45,6 +45,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('sites', SiteController::class)
         ->only(['index', 'store', 'show', 'destroy']);
 
+    Route::post('sites/{site}/backup', [SiteController::class, 'backup'])
+        ->name('sites.backup');
+
     Route::post('sites/{site}/restore/{backup_run}', [SiteController::class, 'restore'])
         ->name('sites.restore');
 

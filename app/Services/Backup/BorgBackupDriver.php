@@ -75,7 +75,7 @@ class BorgBackupDriver implements BackupDriver
         $command = "mkdir -p {$dumpDir} && "
             ."docker exec sword_mysql mysqldump -uroot -p'{$password}' "
             ."--single-transaction --routines --triggers {$dbName} "
-            ."> {$dumpDir}/{$site->db_name}.sql 2>&1";
+            ."> {$dumpDir}/{$site->db_name}.sql 2>/dev/null";
 
         return $ssh->execute($command);
     }
@@ -129,7 +129,7 @@ class BorgBackupDriver implements BackupDriver
         return $result;
     }
 
-    public function restore(SSHService $ssh, BackupRun $backupRun, Site $site): void
+    public function restore(SSHService $ssh, SSHService $rootSsh, BackupRun $backupRun, Site $site): void
     {
         $destination = $backupRun->backupDestination;
         $server = $site->server;
@@ -139,7 +139,7 @@ class BorgBackupDriver implements BackupDriver
         $env = $this->buildBorgEnv($destination);
         $archive = $backupRun->archive_name;
 
-        // 1. Extract archive to a temp directory
+        // 1. Extract archive to a temp directory (as sword — already knows the repo)
         $tempDir = '/srv/sword/restore_tmp_'.bin2hex(random_bytes(4));
         $repoArchive = escapeshellarg($repo.'::'.$archive);
 
@@ -157,25 +157,25 @@ class BorgBackupDriver implements BackupDriver
             throw new \RuntimeException("Borg extract failed: {$result->output} {$result->stderr}");
         }
 
-        // 2. Replace site files
-        $ssh->execute("rm -rf /srv/sword/sites/{$domain} && mv {$tempDir}/srv/sword/sites/{$domain} /srv/sword/sites/{$domain} 2>&1");
-        $ssh->execute("rm -rf /srv/sword/stacks/{$domain} && mv {$tempDir}/srv/sword/stacks/{$domain} /srv/sword/stacks/{$domain} 2>&1");
+        // 2. Replace site files (as root)
+        $rootSsh->execute("rm -rf /srv/sword/sites/{$domain} && mv {$tempDir}/srv/sword/sites/{$domain} /srv/sword/sites/{$domain} 2>&1");
+        $rootSsh->execute("rm -rf /srv/sword/stacks/{$domain} && mv {$tempDir}/srv/sword/stacks/{$domain} /srv/sword/stacks/{$domain} 2>&1");
 
-        // 3. Fix permissions
-        $ssh->execute("sudo chown -R sword:sword /srv/sword/sites/{$domain} 2>&1");
+        // 3. Fix permissions (as root)
+        $rootSsh->execute("chown -R sword:sword /srv/sword/sites/{$domain} /srv/sword/stacks/{$domain} 2>&1");
 
-        // 4. Import database
+        // 4. Import database (as root — needs docker access)
         $password = str_replace("'", "'\\''", $server->mysql_root_password);
         $dbName = $site->db_name;
         $sqlFile = "{$tempDir}/srv/sword/backups/mysql/{$dbName}.sql";
 
-        $ssh->execute("docker exec -i sword_mysql mysql -uroot -p'{$password}' {$dbName} < {$sqlFile} 2>&1");
+        $rootSsh->execute("docker exec -i sword_mysql mysql -uroot -p'{$password}' {$dbName} < {$sqlFile} 2>&1");
 
-        // 5. Restart site containers
-        $ssh->execute("docker compose -f /srv/sword/stacks/{$domain}/docker-compose.yml restart 2>&1");
+        // 5. Restart site containers (as root)
+        $rootSsh->execute("docker compose -f /srv/sword/stacks/{$domain}/docker-compose.yml restart 2>&1");
 
-        // 6. Cleanup temp directory
-        $ssh->execute("rm -rf {$tempDir}");
+        // 6. Cleanup temp directory (as root — may contain root-owned files)
+        $rootSsh->execute("rm -rf {$tempDir}");
     }
 
     public function cleanup(SSHService $ssh, BackupDestination $destination, Server $server, string $domain): SSHResult
@@ -220,10 +220,12 @@ class BorgBackupDriver implements BackupDriver
 
             $escapedKey = str_replace("'", "'\\''", $destination->ssh_private_key);
             $prefix = "echo '{$escapedKey}' > {$escapedKeyPath} && chmod 600 {$escapedKeyPath} && "
+                ."BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes "
                 ."BORG_RSH=\"ssh -i {$escapedKeyPath} -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         } else {
             $escapedPassword = str_replace("'", "'\\''", $destination->password);
-            $prefix = "BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new\" ";
+            $prefix = "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes "
+                ."BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         }
 
         return [

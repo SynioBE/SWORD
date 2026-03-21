@@ -15,6 +15,7 @@ import {
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogClose,
@@ -32,6 +33,7 @@ import {
     index as sitesIndex,
     show as sitesShow,
     destroy as sitesDestroy,
+    backup as sitesBackup,
     restore as sitesRestore,
 } from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
@@ -249,6 +251,12 @@ function runStatusVariant(status: string): 'default' | 'secondary' | 'destructiv
     }
 }
 
+const backupForm = useForm({});
+
+function createBackup() {
+    backupForm.post(sitesBackup(props.site.id).url);
+}
+
 const showRestoreDialog = ref(false);
 const restoreTarget = ref<BackupRunRow | null>(null);
 const restoreForm = useForm({});
@@ -300,7 +308,9 @@ const showCelebration = ref(false);
 
 // ── Delete site ───────────────────────────────────────────
 const showDeleteDialog = ref(false);
-const deleteForm = useForm({});
+const deleteForm = useForm({
+    delete_backups: false,
+});
 
 function deleteSite() {
     deleteForm.delete(sitesDestroy(props.site.id).url, {
@@ -394,6 +404,16 @@ function deleteSite() {
                                     cannot be undone.
                                 </DialogDescription>
                             </DialogHeader>
+                            <div v-if="backupRuns.length > 0" class="flex items-center gap-2 py-2">
+                                <Checkbox
+                                    id="delete-backups"
+                                    :checked="deleteForm.delete_backups"
+                                    @update:checked="deleteForm.delete_backups = $event"
+                                />
+                                <label for="delete-backups" class="text-sm">
+                                    Also delete all backups from backup destinations
+                                </label>
+                            </div>
                             <DialogFooter>
                                 <DialogClose as-child>
                                     <Button variant="outline">Cancel</Button>
@@ -571,7 +591,7 @@ function deleteSite() {
 
             <!-- Backups -->
             <div
-                v-if="isInstalled && backupRuns.length > 0"
+                v-if="isInstalled"
                 class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
             >
                 <div
@@ -579,12 +599,32 @@ function deleteSite() {
                 >
                     <Archive class="size-5 shrink-0 text-muted-foreground" />
                     <p class="text-sm font-medium">Backups</p>
-                    <span class="ml-auto text-xs text-muted-foreground">
-                        {{ backupRuns.length }} backup{{ backupRuns.length !== 1 ? 's' : '' }}
-                    </span>
+                    <div class="ml-auto flex items-center gap-3">
+                        <span v-if="backupRuns.length > 0" class="text-xs text-muted-foreground">
+                            {{ backupRuns.length }} backup{{ backupRuns.length !== 1 ? 's' : '' }}
+                        </span>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            :disabled="backupForm.processing"
+                            @click="createBackup"
+                        >
+                            <Loader2 v-if="backupForm.processing" class="size-3.5 animate-spin" />
+                            <Archive v-else class="size-3.5" />
+                            Create Backup
+                        </Button>
+                    </div>
                 </div>
 
-                <div class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
+                <div v-if="backupForm.errors.backup" class="px-5 py-3">
+                    <p class="text-sm text-destructive">{{ backupForm.errors.backup }}</p>
+                </div>
+
+                <div v-if="backupRuns.length === 0 && !backupForm.errors.backup" class="px-5 py-8 text-center text-sm text-muted-foreground">
+                    No backups yet. Click "Create Backup" to get started.
+                </div>
+
+                <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
                     <div
                         v-for="run in backupRuns"
                         :key="run.id"

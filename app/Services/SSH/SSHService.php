@@ -13,6 +13,7 @@ class SSHService
     public function __construct(
         private readonly Server $server,
         private readonly int $timeout = 3600,
+        private readonly string $username = 'sword',
     ) {}
 
     public function connect(): void
@@ -22,9 +23,9 @@ class SSHService
 
         $key = PublicKeyLoader::load($this->server->ssh_private_key);
 
-        if (! $this->connection->login('sword', $key)) {
+        if (! $this->connection->login($this->username, $key)) {
             throw new SSHConnectionException(
-                "Failed to authenticate to {$this->server->ip_address}:{$this->server->ssh_port} as sword"
+                "Failed to authenticate to {$this->server->ip_address}:{$this->server->ssh_port} as {$this->username}"
             );
         }
     }

@@ -27,8 +27,8 @@ interface BackupDriver
     /** Remove old backups according to retention policy. */
     public function prune(SSHService $ssh, BackupSchedule $schedule, Site $site): SSHResult;
 
-    /** Restore a site from a specific backup run. */
-    public function restore(SSHService $ssh, BackupRun $backupRun, Site $site): void;
+    /** Restore a site from a specific backup run. $ssh for extraction (as sword), $rootSsh for file placement (as root). */
+    public function restore(SSHService $ssh, SSHService $rootSsh, BackupRun $backupRun, Site $site): void;
 
     /** Delete all backups for a site from the destination. */
     public function cleanup(SSHService $ssh, BackupDestination $destination, Server $server, string $domain): SSHResult;

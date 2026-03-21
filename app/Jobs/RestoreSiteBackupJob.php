@@ -33,13 +33,17 @@ class RestoreSiteBackupJob implements ShouldQueue
         $driver = $manager->driver($run->backupDestination->type);
 
         $ssh = new SSHService($site->server, $this->timeout);
+        $rootSsh = new SSHService($site->server, $this->timeout, 'root');
 
         try {
             $ssh->connect();
+            $rootSsh->connect();
+
             $driver->ensureInstalled($ssh);
-            $driver->restore($ssh, $run, $site);
+            $driver->restore($ssh, $rootSsh, $run, $site);
         } finally {
             $ssh->disconnect();
+            $rootSsh->disconnect();
         }
     }
 }
