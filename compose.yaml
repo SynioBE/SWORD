@@ -7,7 +7,7 @@ secrets:
 services:
     laravel.test:
         build:
-            context: './resources/docker/sial/runtimes/8.5'
+            context: './resources/docker/sail/runtimes/8.5'
             dockerfile: Dockerfile
             args:
                 WWWGROUP: '${WWWGROUP}'

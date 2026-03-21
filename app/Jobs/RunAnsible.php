@@ -52,7 +52,7 @@ class RunAnsible implements ShouldQueue
 
         // Validate if we can connect to the server with the provided credentials.
         $result = Process::run(
-            "ssh $user@$server_ip-p $port -i $tempKeyPath -o \"StrictHostKeyChecking=no\" -- whoami"
+            "ssh $user@$server_ip -p $port -i $tempKeyPath -o \"StrictHostKeyChecking=no\" -- whoami"
         );
         if ($result->successful()) {
             logger()->info("Successfully connected to server $server_name ($server_ip) as $user.");
