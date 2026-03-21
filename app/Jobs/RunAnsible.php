@@ -27,7 +27,7 @@ class RunAnsible implements ShouldQueue
         $server = Server::findOrFail($this->serverID);
 
         $ansible = new Ansible;
-        $ansible->RunPlaybook($this->serverID, 'provision.yml');
+        $ansible->runPlaybook($this->serverID, 'provision.yml');
 
         // $this->testRawSSHConnection($server);
     }

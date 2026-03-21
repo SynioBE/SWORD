@@ -8,7 +8,7 @@ use Symfony\Component\Yaml\Yaml;
 
 class Ansible
 {
-    public function GenerateInventory()
+    public function generateInventory()
     {
         // Get all servers.
         $servers = Server::all();
@@ -57,10 +57,10 @@ class Ansible
      *                                     Or full paths. Default to main.yml
      * @param  array<string, mixed>  $extraVars  Extra variables to pass to the playbook via --extra-vars.
      */
-    public function RunPlaybook($server = null, ?string $playbookpath = null, array $extraVars = [])
+    public function runPlaybook($server = null, ?string $playbookpath = null, array $extraVars = [])
     {
         // Always make sure we have a fresh inventory.
-        $this->GenerateInventory();
+        $this->generateInventory();
 
         if (is_int($server)) {
             $server = Server::findOrFail($server);
