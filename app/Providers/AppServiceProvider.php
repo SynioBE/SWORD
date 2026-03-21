@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Backup\BackupDriverManager;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Date;
@@ -18,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(ClientInterface::class, Client::class);
+        $this->app->singleton(BackupDriverManager::class);
     }
 
     /**

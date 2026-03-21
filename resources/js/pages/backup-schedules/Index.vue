@@ -9,6 +9,12 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { show as serversShow } from '@/routes/servers';
 import type { BreadcrumbItem } from '@/types';
 
+interface LastRun {
+    id: number;
+    status: string;
+    completed_at: string | null;
+}
+
 interface ScheduleRow {
     id: number;
     server_id: number;
@@ -21,6 +27,7 @@ interface ScheduleRow {
     retention_count: number;
     is_enabled: boolean;
     created_at: string;
+    last_run: LastRun | null;
 }
 
 const props = defineProps<{
@@ -43,6 +50,19 @@ function scheduleLabel(schedule: ScheduleRow): string {
     }
 
     return `Daily at ${schedule.time}`;
+}
+
+function runStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+    switch (status) {
+        case 'completed':
+            return 'default';
+        case 'running':
+            return 'secondary';
+        case 'failed':
+            return 'destructive';
+        default:
+            return 'outline';
+    }
 }
 </script>
 
@@ -105,6 +125,9 @@ function scheduleLabel(schedule: ScheduleRow): string {
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
+                        <Badge v-if="schedule.last_run" :variant="runStatusVariant(schedule.last_run.status)" class="text-[10px] px-1.5 py-0">
+                            {{ schedule.last_run.status }}
+                        </Badge>
                         <Badge :variant="schedule.is_enabled ? 'default' : 'outline'">
                             {{ schedule.is_enabled ? 'Enabled' : 'Disabled' }}
                         </Badge>

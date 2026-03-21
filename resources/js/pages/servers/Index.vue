@@ -42,6 +42,7 @@ interface ServerRow {
     current_step: string | null;
     provisioned_at: string | null;
     created_at: string;
+    is_online: boolean;
 }
 
 const props = defineProps<{
@@ -246,6 +247,21 @@ function statusLabel(status: string): string {
                             <Loader2 class="size-3.5 animate-spin" />
                             <span>{{ stepLabel(server.current_step) }}</span>
                         </div>
+                        <Badge
+                            v-if="server.status === 'provisioned'"
+                            variant="outline"
+                            class="gap-1.5"
+                        >
+                            <span
+                                class="size-1.5 rounded-full"
+                                :class="
+                                    server.is_online
+                                        ? 'bg-green-500'
+                                        : 'animate-pulse bg-red-500'
+                                "
+                            />
+                            {{ server.is_online ? 'Online' : 'Offline' }}
+                        </Badge>
                         <Badge :variant="statusVariant(server.status)">
                             <CheckCircle2
                                 v-if="server.status === 'provisioned'"

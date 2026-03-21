@@ -130,7 +130,7 @@ waitForApt
 apt-get install -y -qq \
   curl wget git zip unzip gzip tar rsync bc openssl jq gnupg \
   software-properties-common apt-transport-https ca-certificates \
-  lsb-release whois cron ufw
+  lsb-release whois cron ufw borgbackup sshpass
 
 updateProgress "install_packages"
 

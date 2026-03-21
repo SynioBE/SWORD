@@ -30,6 +30,8 @@ use phpseclib3\Crypt\EC;
     'current_step',
     'provision_log',
     'provisioned_at',
+    'is_online',
+    'last_pinged_at',
 ])]
 class Server extends Model
 {
@@ -46,6 +48,8 @@ class Server extends Model
             'ssh_private_key' => 'encrypted',
             'sudo_password' => 'encrypted',
             'mysql_root_password' => 'encrypted',
+            'is_online' => 'boolean',
+            'last_pinged_at' => 'datetime',
         ];
     }
 
@@ -81,10 +85,22 @@ class Server extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<Site, $this> */
+    public function sites(): HasMany
+    {
+        return $this->hasMany(Site::class);
+    }
+
     /** @return HasMany<BackupSchedule, $this> */
     public function backupSchedules(): HasMany
     {
         return $this->hasMany(BackupSchedule::class);
+    }
+
+    /** @return HasMany<BackupRun, $this> */
+    public function backupRuns(): HasMany
+    {
+        return $this->hasMany(BackupRun::class);
     }
 
     public function isProvisioning(): bool
