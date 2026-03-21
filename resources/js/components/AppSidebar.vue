@@ -22,11 +22,11 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { index as cloudflareIndex } from '@/routes/cloudflare';
-import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
-import { index as backupSchedulesIndex } from '@/routes/backup-schedules';
 import { index as serversIndex } from '@/routes/servers';
 import { index as sitesIndex } from '@/routes/sites';
 import type { NavItem } from '@/types';
+import { index as backupDestinationsIndex } from '@/routes/backup-destinations';
+import { index as backupSchedulesIndex } from '@/routes/backup-schedules';
 
 const platformNavItems: NavItem[] = [
   {
