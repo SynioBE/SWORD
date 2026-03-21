@@ -29,6 +29,8 @@
       - whois
       - cron
       - ufw
+      - borgbackup
+      - sshpass
 
     docker_packages:
       - docker-ce
@@ -411,7 +413,7 @@
     - name: Allow SSH through UFW
       community.general.ufw:
         rule: allow
-        port: "{{ ssh_port }}"
+        port: "{{ ansible_port | default(22) }}"
         proto: tcp
         comment: SSH
 

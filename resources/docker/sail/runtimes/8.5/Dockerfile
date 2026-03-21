@@ -73,7 +73,7 @@ RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y postgresql-client-$POSTGRES_VERSION \
     && apt-get install -y software-properties-common \
     && add-apt-repository -y --update ppa:ansible/ansible \
-    && apt-get install -y ansible \
+    && apt-get install -y ansible python3-passlib \
     && apt-get -y autoremove \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

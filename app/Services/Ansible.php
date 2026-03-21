@@ -79,7 +79,10 @@ class Ansible
 
         $extraVars = array_merge(
             [
-                'callback_url' => \config('app.url'),
+                'callback_url' => route('servers.callbacks.provision', [
+                    'server' => $server->id,
+                    'signature' => $server->callback_signature,
+                ]),
                 'server_name' => $server->name ?? null,
                 'server_id' => $server->id ?? null,
                 'server_hostname' => $server->hostname ?? null,
@@ -97,6 +100,9 @@ class Ansible
         $command .= " $playbookpath";
         $command .= " --limit $LimitServer";
         $command .= ' --extra-vars '.escapeshellarg(\json_encode($extraVars));
+
+        // echo ">>Running command<<:\n$command\n";
+        // die();
 
         $result = Process::run($command);
 
