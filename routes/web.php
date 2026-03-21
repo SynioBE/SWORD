@@ -31,6 +31,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('cloudflare/{integration}/{zone}', [CloudflareController::class, 'show'])->name('cloudflare.show');
     Route::post('cloudflare/{integration}/{zone}/purge-cache', CloudflarePurgeCacheController::class)->name('cloudflare.purge-cache');
     Route::post('cloudflare/{integration}/{zone}/dns-records', [CloudflareDnsRecordController::class, 'store'])->name('cloudflare.dns-records.store');
+    Route::patch('cloudflare/{integration}/{zone}/dns-records/{record}', [CloudflareDnsRecordController::class, 'update'])->name('cloudflare.dns-records.update');
     Route::delete('cloudflare/{integration}/{zone}/dns-records/{record}', [CloudflareDnsRecordController::class, 'destroy'])->name('cloudflare.dns-records.destroy');
 });
 

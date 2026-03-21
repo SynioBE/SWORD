@@ -409,6 +409,68 @@ test('destroy dns record calls cloudflare api and redirects back', function () {
         ->assertRedirect();
 });
 
+test('update dns record validates required fields', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('cloudflare.dns-records.update', [$integration->id, 'zone-abc', 'rec-1']))
+        ->assertSessionHasErrors(['name', 'type', 'content']);
+});
+
+test('update dns record rejects invalid type (both is not allowed)', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('cloudflare.dns-records.update', [$integration->id, 'zone-abc', 'rec-1']), [
+            'name' => 'app',
+            'type' => 'both',
+            'content' => '1.2.3.4',
+        ])
+        ->assertSessionHasErrors('type');
+});
+
+test('update dns record calls cloudflare api and redirects back', function () {
+    $user = User::factory()->create();
+
+    $integration = $user->integrations()->create([
+        'name' => 'CF',
+        'provider' => 'cloudflare',
+        'credentials' => ['type' => 'api_token', 'token' => 'tok'],
+    ]);
+
+    $mockClient = Mockery::mock(ClientInterface::class);
+
+    $updatedResponse = new Response(200, [], json_encode([
+        'result' => ['id' => 'rec-1', 'type' => 'A', 'name' => 'app.example.com', 'content' => '5.6.7.8'],
+    ]));
+
+    $mockClient->shouldReceive('sendRequest')->once()->andReturn($updatedResponse);
+    app()->instance(ClientInterface::class, $mockClient);
+
+    $this->actingAs($user)
+        ->patch(route('cloudflare.dns-records.update', [$integration->id, 'zone-abc', 'rec-1']), [
+            'name' => 'app.example.com',
+            'type' => 'A',
+            'content' => '5.6.7.8',
+            'proxied' => false,
+            'ttl' => 1,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+});
+
 test('user cannot modify dns records of another user integration', function () {
     $owner = User::factory()->create();
     $attacker = User::factory()->create();
@@ -428,11 +490,20 @@ test('user cannot modify dns records of another user integration', function () {
         ->assertNotFound();
 
     $this->actingAs($attacker)
+        ->patch(route('cloudflare.dns-records.update', [$integration->id, 'zone-abc', 'rec-1']), [
+            'name' => 'app',
+            'type' => 'A',
+            'content' => '1.2.3.4',
+        ])
+        ->assertNotFound();
+
+    $this->actingAs($attacker)
         ->delete(route('cloudflare.dns-records.destroy', [$integration->id, 'zone-abc', 'rec-1']))
         ->assertNotFound();
 });
 
 test('guests cannot access dns record endpoints', function () {
     $this->post(route('cloudflare.dns-records.store', [1, 'zone-abc']))->assertRedirect(route('login'));
+    $this->patch(route('cloudflare.dns-records.update', [1, 'zone-abc', 'rec-1']))->assertRedirect(route('login'));
     $this->delete(route('cloudflare.dns-records.destroy', [1, 'zone-abc', 'rec-1']))->assertRedirect(route('login'));
 });

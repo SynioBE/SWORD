@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ChevronLeft, Plus, RefreshCw, Shield, Globe, Trash2 } from 'lucide-vue-next';
+import { ChevronLeft, Pencil, Plus, RefreshCw, Shield, Globe, Trash2 } from 'lucide-vue-next';
 import { ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -36,7 +36,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { index as cloudflareIndex, zones as cloudflareZones, purgeCache as cloudfarePurgeCache } from '@/routes/cloudflare';
-import { store as dnsRecordsStore, destroy as dnsRecordsDestroy } from '@/routes/cloudflare/dns-records';
+import { store as dnsRecordsStore, update as dnsRecordsUpdate, destroy as dnsRecordsDestroy } from '@/routes/cloudflare/dns-records';
 import type { BreadcrumbItem } from '@/types';
 
 interface DnsRecord {
@@ -116,6 +116,38 @@ function deleteDnsRecord(recordId: string): void {
   }
   router.delete(
     dnsRecordsDestroy.url({ integration: props.integration.id, zone: props.zoneId, record: recordId }),
+  );
+}
+
+const showEditModal = ref(false);
+const editingRecordId = ref('');
+
+const editForm = useForm({
+  name: '',
+  type: 'A' as 'A' | 'CNAME',
+  content: '',
+  proxied: false,
+  ttl: 1,
+});
+
+function openEditModal(record: DnsRecord): void {
+  editingRecordId.value = record.id;
+  editForm.name = record.name;
+  editForm.type = (record.type === 'CNAME' ? 'CNAME' : 'A') as 'A' | 'CNAME';
+  editForm.content = record.content;
+  editForm.proxied = record.proxied ?? false;
+  editForm.ttl = typeof record.ttl === 'number' ? record.ttl : 1;
+  showEditModal.value = true;
+}
+
+function submitEditRecord(): void {
+  editForm.patch(
+    dnsRecordsUpdate.url({ integration: props.integration.id, zone: props.zoneId, record: editingRecordId.value }),
+    {
+      onSuccess: () => {
+        showEditModal.value = false;
+      },
+    },
   );
 }
 
@@ -260,10 +292,15 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
                   <span v-else class="text-muted-foreground">—</span>
                 </TableCell>
                 <TableCell class="text-right">
-                  <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive"
-                    @click="deleteDnsRecord(record.id)">
-                    <Trash2 class="h-4 w-4" />
-                  </Button>
+                  <div class="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="sm" @click="openEditModal(record)">
+                      <Pencil class="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive"
+                      @click="deleteDnsRecord(record.id)">
+                      <Trash2 class="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -385,6 +422,74 @@ function sslVariant(value: string | undefined): 'default' | 'secondary' | 'destr
         </TabsContent>
       </Tabs>
     </div>
+    <!-- Edit DNS Record Modal -->
+    <Dialog v-model:open="showEditModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit DNS Record</DialogTitle>
+          <DialogDescription>
+            Update the DNS record in <strong>{{ zoneName }}</strong>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form class="flex flex-col gap-4 py-2" @submit.prevent="submitEditRecord">
+          <!-- Type -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="edit-dns-type">Type</Label>
+            <Select v-model="editForm.type">
+              <SelectTrigger id="edit-dns-type">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="A">A — IPv4 address</SelectItem>
+                <SelectItem value="CNAME">CNAME — Alias</SelectItem>
+              </SelectContent>
+            </Select>
+            <InputError :message="editForm.errors.type" />
+          </div>
+
+          <!-- Name -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="edit-dns-name">Name</Label>
+            <Input id="edit-dns-name" v-model="editForm.name" autocomplete="off" />
+            <InputError :message="editForm.errors.name" />
+          </div>
+
+          <!-- Content -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="edit-dns-content">
+              {{ editForm.type === 'CNAME' ? 'Target' : 'IPv4 Address' }}
+            </Label>
+            <Input id="edit-dns-content" v-model="editForm.content"
+              :placeholder="editForm.type === 'CNAME' ? 'target.example.com' : '1.2.3.4'" autocomplete="off" />
+            <InputError :message="editForm.errors.content" />
+          </div>
+
+          <!-- TTL -->
+          <div class="flex flex-col gap-1.5">
+            <Label for="edit-dns-ttl">TTL <span class="text-muted-foreground">(1 = Auto)</span></Label>
+            <Input id="edit-dns-ttl" v-model.number="editForm.ttl" type="number" min="1" />
+            <InputError :message="editForm.errors.ttl" />
+          </div>
+
+          <!-- Proxied -->
+          <div class="flex items-center gap-2">
+            <Checkbox id="edit-dns-proxied" v-model:checked="editForm.proxied" />
+            <Label for="edit-dns-proxied">Proxy through Cloudflare</Label>
+          </div>
+
+          <DialogFooter class="pt-2">
+            <Button type="button" variant="outline" @click="showEditModal = false">
+              Cancel
+            </Button>
+            <Button type="submit" :disabled="editForm.processing">
+              {{ editForm.processing ? 'Saving…' : 'Save Changes' }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
     <!-- Create DNS Record Modal -->
     <Dialog v-model:open="showDnsModal">
       <DialogContent class="sm:max-w-md">

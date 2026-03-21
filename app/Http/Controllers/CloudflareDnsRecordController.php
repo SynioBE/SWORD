@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Cloudflare\UpsertCloudflareDnsRecord;
 use App\Http\Requests\Cloudflare\StoreDnsRecordRequest;
+use App\Http\Requests\Cloudflare\UpdateDnsRecordRequest;
 use App\Services\Cloudflare\CloudflareService;
 use GuzzleHttp\Psr7\HttpFactory;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +40,35 @@ class CloudflareDnsRecordController extends Controller
         );
 
         return back()->with('status', 'dns-record-upserted');
+    }
+
+    /**
+     * Update an existing DNS record by its ID.
+     */
+    public function update(
+        UpdateDnsRecordRequest $request,
+        int $integrationId,
+        string $zoneId,
+        string $recordId,
+    ): RedirectResponse {
+        $integration = $request->user()
+            ->integrations()
+            ->where('provider', 'cloudflare')
+            ->findOrFail($integrationId);
+
+        $service = $this->buildService($integration->credentials);
+
+        $service->updateDnsRecord(
+            zoneId: $zoneId,
+            recordId: $recordId,
+            type: $request->string('type')->toString(),
+            name: $request->string('name')->toString(),
+            content: $request->string('content')->toString(),
+            proxied: (bool) $request->input('proxied', false),
+            ttl: (int) $request->input('ttl', 1),
+        );
+
+        return back()->with('status', 'dns-record-updated');
     }
 
     /**
