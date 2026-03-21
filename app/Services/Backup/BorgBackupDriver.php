@@ -59,7 +59,7 @@ class BorgBackupDriver implements BackupDriver
         $repo = $this->buildRepoPath($destination, $server);
         $env = $this->buildBorgEnv($destination);
 
-        $archiveName = $server->hostname.'-'.now()->format('Y-m-d\TH:i');
+        $archiveName = $server->hostname.'-'.now()->format('Y-m-d\TH:i:s');
 
         // Exclude raw MySQL data files since we dump databases separately
         $repoArchive = escapeshellarg($repo.'::'.$archiveName);
