@@ -216,24 +216,25 @@ WPEXTRAEOF
 
 echo "Installing WordPress..."
 
-set +e
-WP_ADMIN_PASS="$(tr -dc 'A-Za-z0-9!@#%^&*' < /dev/urandom | head -c 20)"
-set -e
 docker exec "sword_{{ $site->id }}_php" wp core install \
     --path=/var/www/html \
     --url="https://${DOMAIN}" \
     --title="${DOMAIN}" \
-    --admin_user="sword_admin" \
-    --admin_password="${WP_ADMIN_PASS}" \
-    --admin_email="admin@${DOMAIN}" \
+    --admin_user="{{ $wpAdminUser }}" \
+    --admin_password="{{ $wpAdminPassword }}" \
+    --admin_email="{{ $adminEmail }}" \
     --skip-email \
+    --allow-root
+
+docker exec "sword_{{ $site->id }}_php" wp user update "{{ $wpAdminUser }}" \
+    --path=/var/www/html \
+    --display_name="{{ $adminDisplayName }}" \
     --allow-root
 
 echo ""
 echo "  WordPress admin credentials:"
 echo "  URL:      https://${DOMAIN}/wp-admin"
-echo "  User:     sword_admin"
-echo "  Password: ${WP_ADMIN_PASS}"
+echo "  User:     {{ $wpAdminUser }}"
 echo ""
 
 # ── Fix permissions ──────────────────────────────────────
