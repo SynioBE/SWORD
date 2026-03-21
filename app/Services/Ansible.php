@@ -23,7 +23,7 @@ class Ansible
             $formattedData['all']['hosts']['server-'.$server->id.'-'.$server->name] = [
                 'ansible_host' => $server->ip_address,
                 'ansible_user' => 'root', // @todo make this a variable.
-                'ansible_port' => 22, // @todo make this a variable.
+                'ansible_port' => $server->ssh_port, // @todo make this a variable.
                 'ansible_ssh_private_key_file' => $this->createTempPrivateKeyFile($server),
             ];
         }

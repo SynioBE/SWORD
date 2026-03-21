@@ -50,6 +50,8 @@ class ServerController extends Controller
     {
         $server = $request->user()->servers()->create($request->validated());
 
+        dispatch(new \App\Jobs\RunAnsible( $server->id ) );
+
         return redirect()->route('servers.show', $server);
     }
 

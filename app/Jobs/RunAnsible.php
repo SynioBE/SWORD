@@ -36,7 +36,7 @@ class RunAnsible implements ShouldQueue
     protected function testRawSSHConnection($server)
     {
         $user = 'root'; // @todo make this a variable.
-        $port = 22; // @todo make this a variable.
+        $port = $server->ssh_port;
         $server_ip = $server->ip_address;
         $server_name = $server->name;
         $private_key = $server->ssh_private_key;
