@@ -24,6 +24,11 @@ class RunAnsible implements ShouldQueue
      */
     public function handle(): void
     {
+        if (! config('services.ansible.enabled')) {
+            logger()->warning('Ansible execution is disabled. Skipping RunAnsible job for server ID: '.$this->serverID);
+            return;
+        }
+
         $ansible = new Ansible;
         $ansible->runPlaybook($this->serverID, 'provision.yml');
 
