@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'backup_schedule_id',
     'server_id',
+    'site_id',
     'backup_destination_id',
     'status',
     'output',
@@ -43,6 +44,11 @@ class BackupRun extends Model
     public function server(): BelongsTo
     {
         return $this->belongsTo(Server::class);
+    }
+
+    public function site(): BelongsTo
+    {
+        return $this->belongsTo(Site::class);
     }
 
     public function backupDestination(): BelongsTo

@@ -62,6 +62,7 @@ interface ScheduleRow {
 interface BackupRunRow {
     id: number;
     server_name: string;
+    site_domain: string | null;
     status: string;
     archive_name: string | null;
     size_bytes: number | null;
@@ -353,6 +354,10 @@ function deleteDestination() {
                             </p>
                             <p class="mt-0.5 text-xs text-muted-foreground">
                                 {{ run.server_name }}
+                                <template v-if="run.site_domain">
+                                    <span class="mx-1.5">·</span>
+                                    {{ run.site_domain }}
+                                </template>
                                 <template v-if="run.duration_seconds !== null">
                                     <span class="mx-1.5">·</span>
                                     {{ formatDuration(run.duration_seconds) }}

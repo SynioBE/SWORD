@@ -128,13 +128,14 @@ class BackupDestinationController extends Controller
             ]);
 
         $recentRuns = $backupDestination->backupRuns()
-            ->with('server')
+            ->with(['server', 'site'])
             ->orderByDesc('created_at')
             ->limit(10)
             ->get()
             ->map(fn ($run) => [
                 'id' => $run->id,
                 'server_name' => $run->server->name,
+                'site_domain' => $run->site?->domain,
                 'status' => $run->status,
                 'archive_name' => $run->archive_name,
                 'size_bytes' => $run->size_bytes,

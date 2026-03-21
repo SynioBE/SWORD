@@ -19,7 +19,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'day_of_month',
     'retention_count',
     'is_enabled',
-    'repo_initialized',
 ])]
 class BackupSchedule extends Model
 {
@@ -33,7 +32,6 @@ class BackupSchedule extends Model
             'day_of_month' => 'integer',
             'retention_count' => 'integer',
             'is_enabled' => 'boolean',
-            'repo_initialized' => 'boolean',
         ];
     }
 

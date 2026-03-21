@@ -12,7 +12,7 @@ class BackupScheduleIndexController extends Controller
     {
         $schedules = $request->user()
             ->servers()
-            ->with(['backupSchedules.backupDestination', 'backupSchedules.latestBackupRun'])
+            ->with(['backupSchedules.backupDestination', 'backupSchedules.latestBackupRun.site'])
             ->get()
             ->flatMap(fn ($server) => $server->backupSchedules->map(fn ($schedule) => [
                 'id' => $schedule->id,
@@ -26,9 +26,10 @@ class BackupScheduleIndexController extends Controller
                 'retention_count' => $schedule->retention_count,
                 'is_enabled' => $schedule->is_enabled,
                 'created_at' => $schedule->created_at->toIso8601String(),
-                'last_run' => $schedule->latestBackupRun?->only([
-                    'id', 'status', 'completed_at',
-                ]),
+                'last_run' => $schedule->latestBackupRun ? [
+                    ...$schedule->latestBackupRun->only(['id', 'status', 'completed_at']),
+                    'site_domain' => $schedule->latestBackupRun->site?->domain,
+                ] : null,
             ]))
             ->sortByDesc('created_at')
             ->values();

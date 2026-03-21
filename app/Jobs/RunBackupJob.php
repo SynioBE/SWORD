@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Contracts\BackupDriver;
 use App\Models\BackupRun;
 use App\Models\BackupSchedule;
+use App\Models\Site;
 use App\Services\Backup\BackupDriverManager;
 use App\Services\SSH\SSHService;
 use Illuminate\Bus\Queueable;
@@ -27,73 +29,79 @@ class RunBackupJob implements ShouldQueue
 
     public function handle(BackupDriverManager $manager): void
     {
-        $schedule = $this->schedule->loadMissing(['server', 'backupDestination']);
+        $schedule = $this->schedule->loadMissing(['server.sites', 'backupDestination']);
         $server = $schedule->server;
         $destination = $schedule->backupDestination;
 
+        $driver = $manager->driver($destination->type);
+
+        $ssh = new SSHService($server, $this->timeout);
+
+        try {
+            $ssh->connect();
+            $driver->ensureInstalled($ssh);
+
+            $sites = $server->sites()->where('status', 'installed')->get();
+
+            foreach ($sites as $site) {
+                $this->backupSite($driver, $ssh, $schedule, $site);
+            }
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    private function backupSite(BackupDriver $driver, SSHService $ssh, BackupSchedule $schedule, Site $site): void
+    {
         $run = BackupRun::create([
             'backup_schedule_id' => $schedule->id,
-            'server_id' => $server->id,
-            'backup_destination_id' => $destination->id,
+            'server_id' => $schedule->server_id,
+            'site_id' => $site->id,
+            'backup_destination_id' => $schedule->backup_destination_id,
             'status' => 'running',
             'started_at' => now(),
         ]);
 
-        $ssh = new SSHService($server, $this->timeout);
         $output = '';
 
         try {
-            $driver = $manager->driver($destination->type);
+            // Idempotent repo setup
+            $setupResult = $driver->setup($ssh, $schedule->backupDestination, $schedule->server, $site);
+            $output .= "[setup:{$site->domain}]\n".$setupResult->output."\n".$setupResult->stderr."\n";
 
-            $ssh->connect();
+            $setupSucceeded = $setupResult->exitCode === 0
+                || str_contains($setupResult->output.$setupResult->stderr, 'already exists')
+                || str_contains($setupResult->output.$setupResult->stderr, 'already initialized');
 
-            $driver->ensureInstalled($ssh);
-
-            if (! $schedule->repo_initialized) {
-                $initResult = $driver->initializeRepo($ssh, $destination, $server);
-                $output .= "[init]\n".$initResult->output."\n".$initResult->stderr."\n";
-
-                $initSucceeded = $initResult->exitCode === 0
-                    || str_contains($initResult->output.$initResult->stderr, 'already exists')
-                    || str_contains($initResult->output.$initResult->stderr, 'already initialized');
-
-                if ($initSucceeded) {
-                    $schedule->update(['repo_initialized' => true]);
-                } else {
-                    throw new \RuntimeException("Repository initialization failed with exit code {$initResult->exitCode}");
-                }
+            if (! $setupSucceeded) {
+                throw new \RuntimeException("Repo setup failed for {$site->domain} with exit code {$setupResult->exitCode}");
             }
 
-            $dumpResult = $driver->dumpDatabases($ssh, $server);
-            $output .= "[dump]\n".$dumpResult->output."\n".$dumpResult->stderr."\n";
+            // Dump this site's database
+            $dumpResult = $driver->dumpDatabase($ssh, $schedule->server, $site);
+            $output .= "[dump:{$site->domain}]\n".$dumpResult->output."\n".$dumpResult->stderr."\n";
 
             if ($dumpResult->exitCode !== 0) {
-                throw new \RuntimeException("Database dump failed with exit code {$dumpResult->exitCode}");
+                throw new \RuntimeException("Database dump failed for {$site->domain} with exit code {$dumpResult->exitCode}");
             }
 
-            $backupResult = $driver->createBackup($ssh, $schedule);
-            $output .= "[backup]\n".$backupResult->output."\n".$backupResult->stderr."\n";
+            // Create backup
+            $backupResult = $driver->backup($ssh, $schedule, $site);
+            $output .= "[backup:{$site->domain}]\n".$backupResult->output."\n".$backupResult->stderr."\n";
 
-            // Borg exit codes: 0 = success, 1 = warnings (e.g. permission denied on some files), 2+ = error
             if ($backupResult->exitCode >= 2) {
-                throw new \RuntimeException("Backup command failed with exit code {$backupResult->exitCode}");
+                throw new \RuntimeException("Backup failed for {$site->domain} with exit code {$backupResult->exitCode}");
             }
 
-            $pruneResult = $driver->prune($ssh, $schedule);
-            $output .= "[prune]\n".$pruneResult->output."\n".$pruneResult->stderr."\n";
-
-            if ($pruneResult->exitCode >= 2) {
-                throw new \RuntimeException("Prune command failed with exit code {$pruneResult->exitCode}");
-            }
-
-            $archiveName = $this->parseArchiveName($backupResult->output);
-            $sizeBytes = $this->parseSizeBytes($backupResult->output);
+            // Prune old backups
+            $pruneResult = $driver->prune($ssh, $schedule, $site);
+            $output .= "[prune:{$site->domain}]\n".$pruneResult->output."\n".$pruneResult->stderr."\n";
 
             $run->update([
                 'status' => 'completed',
                 'output' => $output,
-                'archive_name' => $archiveName,
-                'size_bytes' => $sizeBytes,
+                'archive_name' => $this->parseArchiveName($backupResult->output),
+                'size_bytes' => $this->parseSizeBytes($backupResult->output),
                 'duration_seconds' => (int) abs(now()->diffInSeconds($run->started_at)),
                 'completed_at' => now(),
             ]);
@@ -106,8 +114,6 @@ class RunBackupJob implements ShouldQueue
                 'duration_seconds' => (int) abs(now()->diffInSeconds($run->started_at)),
                 'completed_at' => now(),
             ]);
-        } finally {
-            $ssh->disconnect();
         }
     }
 
