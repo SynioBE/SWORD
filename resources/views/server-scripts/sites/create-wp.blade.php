@@ -374,7 +374,7 @@ docker restart sword_ofelia || true
 
 # ── Done ─────────────────────────────────────────────────
 
-updateProgress "created" "created"
+updateProgress "installed" "installed"
 
 echo ""
 echo "============================================"

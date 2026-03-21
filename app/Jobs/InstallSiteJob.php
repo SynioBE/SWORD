@@ -39,7 +39,6 @@ class InstallSiteJob implements ShouldQueue
         $ssh = new SSH2($server->ip_address, $server->ssh_port);
         $ssh->login('root', $privateKey);
 
-        $ssh->setTimeout(0);
-        $ssh->exec(sprintf('wget -qO create-wp-site.sh "%s" && nohup bash create-wp-site.sh > create-wp-site.log 2>&1 < /dev/null &', $installUrl));
+        $ssh->exec(sprintf('wget -qO create-wp-site.sh "%s" && nohup bash create-wp-site.sh > create-wp-site.log 2>&1 < /dev/null & disown', $installUrl));
     }
 }

@@ -87,6 +87,13 @@ But we can use a `cloudflared` tunnel for this. Such a tunnel is already running
 
 Before provisioning a server, you have to run `./vendor/bin/sail artisan tunnel:sync` to update the `APP_URL` based on the current `cloudflared` tunnel that has been created (the hostname will change randomly each time the container is restarted). After that, the generated provisioning script will contain the correct tunneled URL.
 
+## Monitoring with Netdata
+
+This project includes a built-in Netdata dashboard to monitor all your provisioned servers in real-time.
+
+* **Dashboard:** Access the local Netdata dashboard at `http://localhost:19999`.
+* **Security:** The connection between your dashboard and the remote servers is secured using a streaming API key derived from your unique `APP_KEY`. No manual configuration is required.
+* **Automated Monitoring Setup:** The provisioning script automatically installs a **Netdata Agent** on the target server. This agent will immediately start streaming performance metrics back to your local dashboard. The agent is configured in "headless" mode, meaning it consumes minimal resources on the target server and does not store data locally.
 
 # Cloudflare Integration
 

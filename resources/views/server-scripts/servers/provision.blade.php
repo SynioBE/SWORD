@@ -435,6 +435,31 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockhand_data:/app/data
 
+  netdata-agent:
+    image: netdata/netdata:stable
+    container_name: sword_netdata_agent
+    pid: host
+    network_mode: host
+    restart: unless-stopped
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+    environment:
+      - NETDATA_STREAM_DESTINATION={{ request()->getHost() }}:19999
+      - NETDATA_STREAM_API_KEY=$(echo "{{ config('app.key') }}" | tr -dc 'a-zA-Z0-9' | cut -c1-36)
+    command: >
+      /bin/sh -c "
+      printf '[global]\n  memory mode = none\n  web mode = none\n' > /etc/netdata/netdata.conf;
+      printf '[stream]\n  enabled = yes\n  destination = {{ request()->getHost() }}:19999\n  api key = \$\$(echo \"{{ config('app.key') }}\" | tr -dc 'a-zA-Z0-9' | cut -c1-36)\n' > /etc/netdata/stream.conf;
+      exec /usr/sbin/netdata -D -u netdata"
+
 volumes:
   dockhand_data:
 

@@ -8,6 +8,7 @@ import {
     XCircle,
     Activity,
     Trash2,
+    ExternalLink,
 } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +23,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import DeploymentCelebration from '@/components/DeploymentCelebration.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/create-wp-site-steps';
 import { index as sitesIndex, show as sitesShow } from '@/routes/sites';
@@ -88,6 +90,10 @@ onMounted(() => {
     if (isInstalling.value || isPending.value) {
         startPolling();
     }
+
+    // if (isInstalled.value) {
+    //     showCelebration.value = true;
+    // }
 });
 
 onUnmounted(() => {
@@ -96,11 +102,18 @@ onUnmounted(() => {
 
 watch(
     () => props.site.status,
-    (status) => {
+    (status, prevStatus) => {
         if (status === 'installed' || status === 'failed') {
             stopPolling();
         } else if (status === 'installing' || status === 'pending') {
             startPolling();
+        }
+
+        if (
+            status === 'installed' &&
+            (prevStatus === 'installing' || prevStatus === 'pending')
+        ) {
+            showCelebration.value = true;
         }
     },
 );
@@ -210,6 +223,9 @@ function stepTimestamp(key: string): string | null {
     return entry ? formatTime(entry.timestamp) : null;
 }
 
+// ── Celebration on install completion ─────────────────────
+const showCelebration = ref(false);
+
 // ── Delete site ───────────────────────────────────────────
 const showDeleteDialog = ref(false);
 const deleteForm = useForm({});
@@ -225,6 +241,12 @@ function deleteSite() {
 
 <template>
     <Head :title="site.domain" />
+
+    <!-- Deployment celebration overlay -->
+    <DeploymentCelebration
+        v-if="showCelebration"
+        @done="showCelebration = false"
+    />
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div
@@ -264,6 +286,20 @@ function deleteSite() {
                         <Clock v-else class="size-3" />
                         {{ statusLabel(site.status) }}
                     </Badge>
+
+                    <Button
+                        v-if="isInstalled"
+                        variant="outline"
+                        size="sm"
+                        class="mt-1 gap-1.5"
+                        as="a"
+                        :href="`https://${site.domain}`"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <ExternalLink class="size-3.5" />
+                        Visit site
+                    </Button>
 
                     <Dialog v-model:open="showDeleteDialog">
                         <DialogTrigger as-child>

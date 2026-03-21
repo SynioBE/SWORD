@@ -250,6 +250,7 @@ function isStepCompleted(index: number): boolean {
         return true;
     }
 
+    // A step is completed if a later or equal step was logged
     return index <= lastCompletedIndex.value;
 }
 
@@ -544,8 +545,9 @@ function deleteServer() {
 
             <!-- Pending: show provisioning instructions -->
             <template v-if="isPending || isProvisioning">
-                <!-- Instructions card -->
+                <!-- Instructions card — only shown before provisioning starts -->
                 <div
+                    v-if="isPending"
                     class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
                 >
                     <div
@@ -592,6 +594,7 @@ function deleteServer() {
                             </p>
                             <div class="h-px flex-1 bg-border" />
                         </div>
+
                         <div
                             class="group relative rounded-lg border border-sidebar-border/70 bg-muted/50 dark:border-sidebar-border"
                         >
@@ -725,7 +728,6 @@ function deleteServer() {
 
             <!-- Provisioned: show log, sites, backups -->
             <template v-if="isProvisioned">
-                <!-- Provision log -->
                 <div
                     class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
                 >
@@ -926,8 +928,8 @@ function deleteServer() {
                                     :disabled="
                                         runningScheduleId === schedule.id
                                     "
-                                    title="Run now"
                                     @click="runBackupNow(schedule)"
+                                    title="Run now"
                                 >
                                     <Loader2
                                         v-if="runningScheduleId === schedule.id"
@@ -973,8 +975,9 @@ function deleteServer() {
                         />
                         <p class="text-sm font-medium">Recent Backups</p>
                         <span class="ml-auto text-xs text-muted-foreground">
-                            {{ backupRuns.length }}
-                            run{{ backupRuns.length !== 1 ? 's' : '' }}
+                            {{ backupRuns.length }} run{{
+                                backupRuns.length !== 1 ? 's' : ''
+                            }}
                         </span>
                     </div>
 
@@ -1048,8 +1051,8 @@ function deleteServer() {
                     </DialogHeader>
 
                     <form
-                        class="flex flex-col gap-4 py-2"
                         @submit.prevent="submitAddSchedule"
+                        class="flex flex-col gap-4 py-2"
                     >
                         <div class="flex flex-col gap-1.5">
                             <label
@@ -1192,8 +1195,8 @@ function deleteServer() {
                             <Button
                                 type="button"
                                 variant="outline"
-                                :disabled="scheduleForm.processing"
                                 @click="showAddScheduleModal = false"
+                                :disabled="scheduleForm.processing"
                             >
                                 Cancel
                             </Button>

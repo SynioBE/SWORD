@@ -113,6 +113,9 @@ services:
             - SYS_ADMIN
         security_opt:
             - apparmor:unconfined
+        environment:
+            # We use the existing Laravel App Key as the Netdata password
+            - NETDATA_API_KEY=${APP_KEY}
         volumes:
             - 'netdataconfig:/etc/netdata'
             - 'netdatalib:/var/lib/netdata'
@@ -125,6 +128,19 @@ services:
             - '/var/run/docker.sock:/var/run/docker.sock:ro'
         networks:
             - sail
+        command: >
+            /bin/sh -c "
+            # Extract a 36-char alphanumeric string from the APP_KEY to use as a Stream ID
+            CLEAN_KEY=\$$(echo \"\$$NETDATA_API_KEY\" | tr -dc 'a-zA-Z0-9' | cut -c1-36);
+            
+            if [ ! -s /etc/netdata/stream.conf ]; then
+                echo \"Inizializing stream.conf with derived Key: \$$CLEAN_KEY\";
+                echo \"[\$$CLEAN_KEY]\" > /etc/netdata/stream.conf;
+                echo \"    enabled = yes\" >> /etc/netdata/stream.conf;
+                echo \"    default history = 3600\" >> /etc/netdata/stream.conf;
+                chown netdata:netdata /etc/netdata/stream.conf;
+            fi;
+            exec /usr/sbin/netdata -D -u netdata"
 networks:
     sail:
         driver: bridge
