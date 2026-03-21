@@ -103,6 +103,7 @@ interface ServerDetail {
     current_step: string | null;
     provision_log: ProvisionStep[];
     provisioned_at: string | null;
+    ssh_public_key: string | null;
     created_at: string;
     wget_command: string;
     callback_signature: string;
@@ -564,6 +565,33 @@ function deleteServer() {
                         </div>
                     </div>
                     <div class="flex flex-col gap-3 p-5">
+                        <!-- Public Key label -->
+                        <div class="flex items-center gap-2">
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                Public Key
+                            </p>
+                            <div class="h-px flex-1 bg-border" />
+                        </div>
+                        <div
+                            class="group relative rounded-lg border border-sidebar-border/70 bg-muted/50 dark:border-sidebar-border"
+                        >
+                            <pre
+                                class="overflow-x-auto p-4 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-foreground"
+                                >{{ server.ssh_public_key }}</pre
+                            >
+                        </div>
+
+                        <!-- Command label -->
+                        <div class="flex items-center gap-2">
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                Command
+                            </p>
+                            <div class="h-px flex-1 bg-border" />
+                        </div>
                         <div
                             class="group relative rounded-lg border border-sidebar-border/70 bg-muted/50 dark:border-sidebar-border"
                         >
@@ -872,12 +900,17 @@ function deleteServer() {
                                 <p class="mt-0.5 text-xs text-muted-foreground">
                                     {{ scheduleLabel(schedule) }}
                                     <span class="mx-1.5">·</span>
-                                    Retain {{ schedule.retention_count }} backups
+                                    Retain
+                                    {{ schedule.retention_count }} backups
                                     <template v-if="schedule.last_run">
                                         <span class="mx-1.5">·</span>
                                         Last:
                                         <Badge
-                                            :variant="runStatusVariant(schedule.last_run.status)"
+                                            :variant="
+                                                runStatusVariant(
+                                                    schedule.last_run.status,
+                                                )
+                                            "
                                             class="ml-1 px-1.5 py-0 text-[10px]"
                                         >
                                             {{ schedule.last_run.status }}
@@ -890,7 +923,9 @@ function deleteServer() {
                                     variant="outline"
                                     size="icon"
                                     class="size-7"
-                                    :disabled="runningScheduleId === schedule.id"
+                                    :disabled="
+                                        runningScheduleId === schedule.id
+                                    "
                                     title="Run now"
                                     @click="runBackupNow(schedule)"
                                 >
@@ -962,7 +997,9 @@ function deleteServer() {
                         >
                             <div>
                                 <p class="text-sm font-medium">
-                                    {{ run.archive_name ?? run.destination_name }}
+                                    {{
+                                        run.archive_name ?? run.destination_name
+                                    }}
                                 </p>
                                 <p class="mt-0.5 text-xs text-muted-foreground">
                                     {{ run.destination_name }}
@@ -970,7 +1007,9 @@ function deleteServer() {
                                         v-if="run.duration_seconds !== null"
                                     >
                                         <span class="mx-1.5">·</span>
-                                        {{ formatDuration(run.duration_seconds) }}
+                                        {{
+                                            formatDuration(run.duration_seconds)
+                                        }}
                                     </template>
                                     <template v-if="run.size_bytes !== null">
                                         <span class="mx-1.5">·</span>
