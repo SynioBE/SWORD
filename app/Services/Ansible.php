@@ -70,6 +70,7 @@ class Ansible
             $LimitServer = 'server-'.$server->id.'-'.$server->name;
         }
 
+        // Ugly path handling.
         if (empty($playbookpath)) {
             $playbookpath = __DIR__.'/../../ansible-playbooks/main.yml';
         } elseif (! str_starts_with($playbookpath, '/')) {

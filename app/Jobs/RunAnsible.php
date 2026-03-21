@@ -24,21 +24,20 @@ class RunAnsible implements ShouldQueue
      */
     public function handle(): void
     {
-        $server = Server::findOrFail($this->serverID);
-
         $ansible = new Ansible;
         $ansible->runPlaybook($this->serverID, 'provision.yml');
 
-        // $this->testRawSSHConnection($server);
+        // $this->testRawSSHConnection($this->serverID);
     }
 
     /**
      * Test the raw SSH connection
      *
-     * @param  mixed  $server
+     * @param int $serverID
      */
-    protected function testRawSSHConnection($server)
+    protected function testRawSSHConnection( int $serverID)
     {
+        $server = Server::findOrFail($serverID);
         $user = 'root'; // @todo make this a variable.
         $port = $server->ssh_port;
         $server_ip = $server->ip_address;
