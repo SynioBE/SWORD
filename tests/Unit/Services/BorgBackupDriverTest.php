@@ -23,9 +23,9 @@ test('builds correct repo path', function () {
         'hostname' => 'my-server',
     ]);
 
-    $path = $driver->buildRepoPath($destination, $server);
+    $path = $driver->buildRepoPath($destination, $server, 'example.com');
 
-    expect($path)->toBe('ssh://backupuser@backup.example.com:22/backups/my-server');
+    expect($path)->toBe('ssh://backupuser@backup.example.com:22/backups/sites/my-server/example.com');
 });
 
 test('builds correct repo path with trailing slash in storage path', function () {
@@ -42,9 +42,9 @@ test('builds correct repo path with trailing slash in storage path', function ()
         'hostname' => 'web-01',
     ]);
 
-    $path = $driver->buildRepoPath($destination, $server);
+    $path = $driver->buildRepoPath($destination, $server, 'mysite.org');
 
-    expect($path)->toBe('ssh://user@host.com:2222/data/backups/web-01');
+    expect($path)->toBe('ssh://user@host.com:2222/data/backups/sites/web-01/mysite.org');
 });
 
 test('builds password-based borg env', function () {
