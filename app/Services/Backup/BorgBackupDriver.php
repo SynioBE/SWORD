@@ -4,8 +4,10 @@ namespace App\Services\Backup;
 
 use App\Contracts\BackupDriver;
 use App\Models\BackupDestination;
+use App\Models\BackupRun;
 use App\Models\BackupSchedule;
 use App\Models\Server;
+use App\Models\Site;
 use App\Services\SSH\SSHResult;
 use App\Services\SSH\SSHService;
 
@@ -20,10 +22,16 @@ class BorgBackupDriver implements BackupDriver
         }
     }
 
-    public function initializeRepo(SSHService $ssh, BackupDestination $destination, Server $server): SSHResult
+    public function setup(SSHService $ssh, BackupDestination $destination, Server $server, Site $site): SSHResult
     {
-        $repo = $this->buildRepoPath($destination, $server);
+        $repo = $this->buildRepoPath($destination, $server, $site->domain);
         $env = $this->buildBorgEnv($destination);
+
+        // Ensure the parent directory exists on the destination
+        $storagePath = rtrim($destination->storage_path, '/');
+        $parentPath = "{$storagePath}/sites/{$server->hostname}";
+        $mkdirCommand = $this->buildRemoteCommand($destination, "mkdir -p ".escapeshellarg($parentPath));
+        $ssh->execute($mkdirCommand);
 
         $command = $env['prefix'].'borg init --encryption=none '.escapeshellarg($repo).' 2>&1';
 
@@ -36,34 +44,59 @@ class BorgBackupDriver implements BackupDriver
         return $result;
     }
 
-    public function dumpDatabases(SSHService $ssh, Server $server): SSHResult
+    /**
+     * Build a command that executes on the backup destination via SSH.
+     */
+    private function buildRemoteCommand(BackupDestination $destination, string $remoteCommand): string
     {
-        $password = str_replace("'", "'\\''", $server->mysql_root_password);
-        $sites = $server->sites()->whereNotNull('db_name')->get();
+        $port = (int) $destination->port;
+        $host = escapeshellarg("{$destination->username}@{$destination->host}");
 
-        $commands = ['mkdir -p /srv/sword/backups/mysql'];
+        if ($destination->auth_method === 'ssh_key') {
+            $keyPath = '/tmp/sword_mkdir_key_'.bin2hex(random_bytes(4));
+            $escapedKey = str_replace("'", "'\\''", $destination->ssh_private_key);
 
-        foreach ($sites as $site) {
-            $dbName = escapeshellarg($site->db_name);
-            $escapedDbName = $site->db_name;
-            $commands[] = "docker exec sword_mysql mysqldump -uroot -p'{$password}' --single-transaction --routines --triggers {$dbName} > /srv/sword/backups/mysql/{$escapedDbName}.sql 2>&1";
+            return "echo '{$escapedKey}' > {$keyPath} && chmod 600 {$keyPath} && "
+                ."ssh -i {$keyPath} -p {$port} -o StrictHostKeyChecking=accept-new {$host} ".escapeshellarg($remoteCommand)
+                ." 2>&1; rm -f {$keyPath}";
         }
 
-        return $ssh->execute(implode(' && ', $commands));
+        $escapedPassword = str_replace("'", "'\\''", $destination->password);
+
+        return "sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new {$host} ".escapeshellarg($remoteCommand).' 2>&1';
     }
 
-    public function createBackup(SSHService $ssh, BackupSchedule $schedule): SSHResult
+    public function dumpDatabase(SSHService $ssh, Server $server, Site $site): SSHResult
+    {
+        $password = str_replace("'", "'\\''", $server->mysql_root_password);
+        $dbName = escapeshellarg($site->db_name);
+        $dumpDir = '/srv/sword/backups/mysql';
+
+        $command = "mkdir -p {$dumpDir} && "
+            ."docker exec sword_mysql mysqldump -uroot -p'{$password}' "
+            ."--single-transaction --routines --triggers {$dbName} "
+            ."> {$dumpDir}/{$site->db_name}.sql 2>/dev/null";
+
+        return $ssh->execute($command);
+    }
+
+    public function backup(SSHService $ssh, BackupSchedule $schedule, Site $site): SSHResult
     {
         $destination = $schedule->backupDestination;
         $server = $schedule->server;
-        $repo = $this->buildRepoPath($destination, $server);
+        $repo = $this->buildRepoPath($destination, $server, $site->domain);
         $env = $this->buildBorgEnv($destination);
 
-        $archiveName = $server->hostname.'-'.now()->format('Y-m-d\TH:i:s');
-
-        // Exclude raw MySQL data files since we dump databases separately
+        $archiveName = $site->domain.'-'.now()->format('Y-m-d\TH:i:s');
         $repoArchive = escapeshellarg($repo.'::'.$archiveName);
-        $command = $env['prefix'].'borg create --stats --compression auto,zstd --exclude '.escapeshellarg('/srv/sword/shared/mysql/data').' '.$repoArchive.' /srv/sword 2>&1';
+
+        $paths = implode(' ', [
+            escapeshellarg("/srv/sword/sites/{$site->domain}"),
+            escapeshellarg("/srv/sword/stacks/{$site->domain}"),
+            escapeshellarg("/srv/sword/backups/mysql/{$site->db_name}.sql"),
+        ]);
+
+        $command = $env['prefix'].'borg create --stats --compression auto,zstd '.$repoArchive.' '.$paths.' 2>&1';
 
         $result = $ssh->execute($command);
 
@@ -74,11 +107,11 @@ class BorgBackupDriver implements BackupDriver
         return $result;
     }
 
-    public function prune(SSHService $ssh, BackupSchedule $schedule): SSHResult
+    public function prune(SSHService $ssh, BackupSchedule $schedule, Site $site): SSHResult
     {
         $destination = $schedule->backupDestination;
         $server = $schedule->server;
-        $repo = $this->buildRepoPath($destination, $server);
+        $repo = $this->buildRepoPath($destination, $server, $site->domain);
         $env = $this->buildBorgEnv($destination);
 
         $keepLast = (int) $schedule->retention_count;
@@ -96,7 +129,72 @@ class BorgBackupDriver implements BackupDriver
         return $result;
     }
 
-    public function buildRepoPath(BackupDestination $destination, Server $server): string
+    public function restore(SSHService $ssh, SSHService $rootSsh, BackupRun $backupRun, Site $site): void
+    {
+        $destination = $backupRun->backupDestination;
+        $server = $site->server;
+        $domain = $site->domain;
+
+        $repo = $this->buildRepoPath($destination, $server, $domain);
+        $env = $this->buildBorgEnv($destination);
+        $archive = $backupRun->archive_name;
+
+        // 1. Extract archive to a temp directory (as sword — already knows the repo)
+        $tempDir = '/srv/sword/restore_tmp_'.bin2hex(random_bytes(4));
+        $repoArchive = escapeshellarg($repo.'::'.$archive);
+
+        $extractCmd = "mkdir -p {$tempDir} && cd {$tempDir} && "
+            .$env['prefix']."borg extract {$repoArchive} 2>&1";
+
+        $result = $ssh->execute($extractCmd);
+
+        if ($env['cleanup']) {
+            $ssh->execute($env['cleanup']);
+        }
+
+        if ($result->exitCode >= 2) {
+            $ssh->execute("rm -rf {$tempDir}");
+            throw new \RuntimeException("Borg extract failed: {$result->output} {$result->stderr}");
+        }
+
+        // 2. Replace site files (as root)
+        $rootSsh->execute("rm -rf /srv/sword/sites/{$domain} && mv {$tempDir}/srv/sword/sites/{$domain} /srv/sword/sites/{$domain} 2>&1");
+        $rootSsh->execute("rm -rf /srv/sword/stacks/{$domain} && mv {$tempDir}/srv/sword/stacks/{$domain} /srv/sword/stacks/{$domain} 2>&1");
+
+        // 3. Fix permissions (as root)
+        $rootSsh->execute("chown -R sword:sword /srv/sword/sites/{$domain} /srv/sword/stacks/{$domain} 2>&1");
+
+        // 4. Import database (as root — needs docker access)
+        $password = str_replace("'", "'\\''", $server->mysql_root_password);
+        $dbName = $site->db_name;
+        $sqlFile = "{$tempDir}/srv/sword/backups/mysql/{$dbName}.sql";
+
+        $rootSsh->execute("docker exec -i sword_mysql mysql -uroot -p'{$password}' {$dbName} < {$sqlFile} 2>&1");
+
+        // 5. Restart site containers (as root)
+        $rootSsh->execute("docker compose -f /srv/sword/stacks/{$domain}/docker-compose.yml restart 2>&1");
+
+        // 6. Cleanup temp directory (as root — may contain root-owned files)
+        $rootSsh->execute("rm -rf {$tempDir}");
+    }
+
+    public function cleanup(SSHService $ssh, BackupDestination $destination, Server $server, string $domain): SSHResult
+    {
+        $repo = $this->buildRepoPath($destination, $server, $domain);
+        $env = $this->buildBorgEnv($destination);
+
+        $command = $env['prefix'].'borg delete --force '.escapeshellarg($repo).' 2>&1';
+
+        $result = $ssh->execute($command);
+
+        if ($env['cleanup']) {
+            $ssh->execute($env['cleanup']);
+        }
+
+        return $result;
+    }
+
+    public function buildRepoPath(BackupDestination $destination, Server $server, string $domain): string
     {
         $storagePath = rtrim($destination->storage_path, '/');
         $username = $destination->username;
@@ -104,7 +202,7 @@ class BorgBackupDriver implements BackupDriver
         $port = (int) $destination->port;
         $hostname = $server->hostname;
 
-        return "ssh://{$username}@{$host}:{$port}{$storagePath}/{$hostname}";
+        return "ssh://{$username}@{$host}:{$port}{$storagePath}/sites/{$hostname}/{$domain}";
     }
 
     /**
@@ -122,10 +220,12 @@ class BorgBackupDriver implements BackupDriver
 
             $escapedKey = str_replace("'", "'\\''", $destination->ssh_private_key);
             $prefix = "echo '{$escapedKey}' > {$escapedKeyPath} && chmod 600 {$escapedKeyPath} && "
+                ."BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes "
                 ."BORG_RSH=\"ssh -i {$escapedKeyPath} -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         } else {
             $escapedPassword = str_replace("'", "'\\''", $destination->password);
-            $prefix = "BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new\" ";
+            $prefix = "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes "
+                ."BORG_RSH=\"sshpass -p '{$escapedPassword}' ssh -p {$port} -o StrictHostKeyChecking=accept-new\" ";
         }
 
         return [

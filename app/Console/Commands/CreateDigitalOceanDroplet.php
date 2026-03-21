@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Services\DigitalOcean\CreateDigitalOceanDropletData;
-use App\Services\DigitalOcean\DigitalOceanDropletCreator;
-use App\Services\DigitalOcean\DigitalOceanDropletException;
+use App\Services\Cloud\DigitalOcean\CreateDigitalOceanDropletData;
+use App\Services\Cloud\DigitalOcean\DigitalOceanDropletCreator;
+use App\Services\Cloud\DigitalOcean\DigitalOceanDropletException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -14,13 +14,13 @@ class CreateDigitalOceanDroplet extends Command
                             {--key= : The API key}
                             {--name= : The droplet name (a random one will be generated if not provided)}
                             {--region=nyc1 : The region}
-                            {--size=s-1vcpu-1gb : The size}
+                            {--type=s-1vcpu-1gb : The droplet type}
                             {--image=ubuntu-24-04-x64 : The image}
                             {--public-key= : Name of an existing DigitalOcean SSH key, or a raw public key string (required)}';
 
     protected $description = 'Creates a DigitalOcean droplet';
 
-    private const DO_API_SECRET_PATH = '/run/secrets/do-api';
+    private const DO_API_SECRET_PATH = '/run/secrets/do_api_key';
 
     public function __construct(private readonly DigitalOceanDropletCreator $dropletCreator)
     {
@@ -52,7 +52,7 @@ class CreateDigitalOceanDroplet extends Command
                 apiKey: $apiKey,
                 name: $this->option('name') ?? 'droplet-'.Str::lower(Str::random(8)),
                 region: (string) $this->option('region'),
-                size: (string) $this->option('size'),
+                serverType: (string) $this->option('type'),
                 image: (string) $this->option('image'),
                 publicKey: $publicKeyOption,
             ));
@@ -77,7 +77,7 @@ class CreateDigitalOceanDroplet extends Command
                 $result->dropletId,
                 $result->name,
                 $result->region,
-                $result->size,
+                $result->type,
                 $result->status,
             ]]
         );

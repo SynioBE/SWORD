@@ -1,7 +1,7 @@
 <?php
 
-use App\Services\DigitalOcean\CreateDigitalOceanDropletData;
-use App\Services\DigitalOcean\DigitalOceanDropletCreator;
+use App\Services\Cloud\DigitalOcean\CreateDigitalOceanDropletData;
+use App\Services\Cloud\DigitalOcean\DigitalOceanDropletCreator;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Psr\Http\Client\ClientInterface;
@@ -33,7 +33,7 @@ test('DigitalOceanDropletCreator uploads a raw SSH key and returns droplet detai
         apiKey: 'test-token',
         name: 'sword-web',
         region: 'ams3',
-        size: 's-1vcpu-1gb',
+        serverType: 's-1vcpu-1gb',
         image: 'ubuntu-24-04-x64',
         publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB-example uploaded-key',
         publicIpPollAttempts: 1,
@@ -43,7 +43,7 @@ test('DigitalOceanDropletCreator uploads a raw SSH key and returns droplet detai
     expect($result->dropletId)->toBe(999)
         ->and($result->name)->toBe('sword-web')
         ->and($result->region)->toBe('ams3')
-        ->and($result->size)->toBe('s-1vcpu-1gb')
+        ->and($result->type)->toBe('s-1vcpu-1gb')
         ->and($result->status)->toBe('new')
         ->and($result->publicIp)->toBe('203.0.113.10')
         ->and($result->sshKeyId)->toBe(44)
@@ -93,7 +93,7 @@ test('DigitalOceanDropletCreator resolves an existing key by name', function () 
         apiKey: 'test-token',
         name: 'sword-app',
         region: 'nyc1',
-        size: 's-1vcpu-2gb',
+        serverType: 's-1vcpu-2gb',
         image: 'ubuntu-24-04-x64',
         publicKey: 'existing-key',
         publicIpPollAttempts: 1,

@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Services\Hetzner;
+namespace App\Services\Cloud\DigitalOcean;
 
-readonly class HetznerServerResult
+readonly class DigitalOceanDropletResult
 {
     public function __construct(
-        public int $serverId,
+        public int $dropletId,
         public string $name,
-        public string $location,
-        public string $serverType,
+        public string $region,
+        public string $type,
         public string $status,
         public ?string $publicIp,
         public int|string $sshKeyId,

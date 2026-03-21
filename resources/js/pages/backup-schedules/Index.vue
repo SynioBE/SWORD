@@ -13,6 +13,7 @@ interface LastRun {
     id: number;
     status: string;
     completed_at: string | null;
+    site_domain: string | null;
 }
 
 interface ScheduleRow {
@@ -127,6 +128,9 @@ function runStatusVariant(status: string): 'default' | 'secondary' | 'destructiv
                     <div class="flex items-center gap-3">
                         <Badge v-if="schedule.last_run" :variant="runStatusVariant(schedule.last_run.status)" class="text-[10px] px-1.5 py-0">
                             {{ schedule.last_run.status }}
+                            <template v-if="schedule.last_run.site_domain">
+                                · {{ schedule.last_run.site_domain }}
+                            </template>
                         </Badge>
                         <Badge :variant="schedule.is_enabled ? 'default' : 'outline'">
                             {{ schedule.is_enabled ? 'Enabled' : 'Disabled' }}

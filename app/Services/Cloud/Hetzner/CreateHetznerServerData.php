@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Services\DigitalOcean;
+namespace App\Services\Cloud\Hetzner;
 
-readonly class CreateDigitalOceanDropletData
+readonly class CreateHetznerServerData
 {
     public function __construct(
         public string $apiKey,
         public string $name,
-        public string $region,
-        public string $size,
+        public string $serverType,
+        public string $location,
         public string $image,
         public string $publicKey,
         public int $publicIpPollAttempts = 30,

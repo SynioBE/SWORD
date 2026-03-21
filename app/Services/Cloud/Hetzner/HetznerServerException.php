@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Hetzner;
+namespace App\Services\Cloud\Hetzner;
 
 use RuntimeException;
 

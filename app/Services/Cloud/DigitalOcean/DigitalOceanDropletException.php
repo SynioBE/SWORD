@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\DigitalOcean;
+namespace App\Services\Cloud\DigitalOcean;
 
 use RuntimeException;
 

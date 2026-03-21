@@ -1,0 +1,11 @@
+services:
+    laravel.test:
+        secrets:
+            - do_api_key
+            - hetzner_api_key
+
+secrets:
+    do_api_key:
+        file: secrets/do_api_key
+    hetzner_api_key:
+        file: secrets/hetzner_api_key

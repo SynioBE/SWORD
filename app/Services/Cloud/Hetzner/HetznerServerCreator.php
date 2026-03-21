@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\DigitalOcean;
+namespace App\Services\Cloud\Hetzner;
 
 use GuzzleHttp\Psr7\HttpFactory;
 use Illuminate\Support\Str;
@@ -9,47 +9,47 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
-class DigitalOceanDropletCreator
+class HetznerServerCreator
 {
-    private const API_BASE = 'https://api.digitalocean.com/v2';
+    private const API_BASE = 'https://api.hetzner.cloud/v1';
 
     public function __construct(
         private readonly ClientInterface $httpClient,
         private readonly HttpFactory $httpFactory,
     ) {}
 
-    public function create(CreateDigitalOceanDropletData $data): DigitalOceanDropletResult
+    public function create(CreateHetznerServerData $data): HetznerServerResult
     {
         $this->guardPollingConfiguration($data);
 
         $resolvedSshKey = $this->resolveSshKey($data->publicKey, $data->apiKey);
 
-        $response = $this->sendRequest($this->dropletCreateRequest($data, $resolvedSshKey['id']));
+        $response = $this->sendRequest($this->serverCreateRequest($data, $resolvedSshKey['id']));
         $status = $response->getStatusCode();
         $payload = $this->decodeResponse($response);
 
-        if ($status !== 202) {
-            $message = is_string($payload['message'] ?? null)
-                ? $payload['message']
-                : 'Unexpected response from the DigitalOcean API.';
+        if ($status !== 201) {
+            $message = is_string($payload['error']['message'] ?? null)
+                ? $payload['error']['message']
+                : (is_string($payload['message'] ?? null) ? $payload['message'] : 'Unexpected response from the Hetzner API.');
 
-            throw new DigitalOceanDropletException("DigitalOcean API error [{$status}]: {$message}");
+            throw new HetznerServerException("Hetzner API error [{$status}]: {$message}");
         }
 
-        $droplet = $payload['droplet'] ?? null;
+        $server = $payload['server'] ?? null;
 
-        if (! is_array($droplet) || ! isset($droplet['id'], $droplet['name'], $droplet['status'])) {
-            throw new DigitalOceanDropletException('DigitalOcean API response did not include droplet details.');
+        if (! is_array($server) || ! isset($server['id'], $server['name'], $server['status'])) {
+            throw new HetznerServerException('Hetzner API response did not include server details.');
         }
 
-        return new DigitalOceanDropletResult(
-            dropletId: (int) $droplet['id'],
-            name: (string) $droplet['name'],
-            region: (string) ($droplet['region']['slug'] ?? $data->region),
-            size: (string) ($droplet['size_slug'] ?? $data->size),
-            status: (string) $droplet['status'],
+        return new HetznerServerResult(
+            serverId: (int) $server['id'],
+            name: (string) $server['name'],
+            location: (string) ($server['datacenter']['location']['name'] ?? $server['datacenter']['location']['description'] ?? $data->location),
+            serverType: (string) ($server['server_type']['name'] ?? $data->serverType),
+            status: (string) $server['status'],
             publicIp: $this->waitForPublicIp(
-                dropletId: (int) $droplet['id'],
+                serverId: (int) $server['id'],
                 apiKey: $data->apiKey,
                 attempts: $data->publicIpPollAttempts,
                 intervalSeconds: $data->publicIpPollIntervalSeconds,
@@ -60,17 +60,21 @@ class DigitalOceanDropletCreator
         );
     }
 
-    private function dropletCreateRequest(CreateDigitalOceanDropletData $data, int|string $sshKeyId): RequestInterface
+    private function serverCreateRequest(CreateHetznerServerData $data, int|string $sshKeyId): RequestInterface
     {
         $payload = $this->encodePayload([
             'name' => $data->name,
-            'region' => $data->region,
-            'size' => $data->size,
+            'location' => $data->location,
+            'server_type' => $data->serverType,
             'image' => $data->image,
             'ssh_keys' => [$sshKeyId],
+            'public_net' => [
+                'ipv4_enabled' => true,
+                'ipv6_enabled' => false,
+            ],
         ]);
 
-        return $this->authorizedRequest('POST', '/droplets', $data->apiKey, $payload);
+        return $this->authorizedRequest('POST', '/servers', $data->apiKey, $payload);
     }
 
     /**
@@ -117,7 +121,7 @@ class DigitalOceanDropletCreator
             'public_key' => trim($publicKey),
         ]);
 
-        $response = $this->sendRequest($this->authorizedRequest('POST', '/account/keys', $apiKey, $payload));
+        $response = $this->sendRequest($this->authorizedRequest('POST', '/ssh_keys', $apiKey, $payload));
         $data = $this->decodeResponse($response);
 
         if ($response->getStatusCode() === 201) {
@@ -140,7 +144,7 @@ class DigitalOceanDropletCreator
             }
         }
 
-        throw new DigitalOceanDropletException('Could not find or upload the provided SSH key.');
+        throw new HetznerServerException('Could not find or upload the provided SSH key.');
     }
 
     private function findKeyIdByName(string $name, string $apiKey): ?int
@@ -159,7 +163,7 @@ class DigitalOceanDropletCreator
      */
     private function listSshKeys(string $apiKey): array
     {
-        $response = $this->sendRequest($this->authorizedRequest('GET', '/account/keys', $apiKey));
+        $response = $this->sendRequest($this->authorizedRequest('GET', '/ssh_keys', $apiKey));
         $data = $this->decodeResponse($response);
 
         return collect($data['ssh_keys'] ?? [])
@@ -172,7 +176,7 @@ class DigitalOceanDropletCreator
             ->all();
     }
 
-    private function waitForPublicIp(int $dropletId, string $apiKey, int $attempts, int $intervalSeconds): ?string
+    private function waitForPublicIp(int $serverId, string $apiKey, int $attempts, int $intervalSeconds): ?string
     {
         $lastException = null;
 
@@ -180,17 +184,15 @@ class DigitalOceanDropletCreator
             sleep($intervalSeconds);
 
             try {
-                $response = $this->sendRequest($this->authorizedRequest('GET', "/droplets/{$dropletId}", $apiKey));
-            } catch (DigitalOceanDropletException $exception) {
+                $response = $this->sendRequest($this->authorizedRequest('GET', "/servers/{$serverId}", $apiKey));
+            } catch (HetznerServerException $exception) {
                 $lastException = $exception;
 
                 continue;
             }
 
             $payload = $this->decodeResponse($response);
-            $publicNetwork = collect($payload['droplet']['networks']['v4'] ?? [])
-                ->firstWhere('type', 'public');
-            $publicIp = is_array($publicNetwork) ? ($publicNetwork['ip_address'] ?? null) : null;
+            $publicIp = $payload['server']['public_net']['ipv4']['ip'] ?? null;
 
             if (is_string($publicIp) && $publicIp !== '') {
                 return $publicIp;
@@ -198,8 +200,8 @@ class DigitalOceanDropletCreator
         }
 
         if ($lastException !== null) {
-            throw new DigitalOceanDropletException(
-                'Failed while waiting for the droplet public IP.',
+            throw new HetznerServerException(
+                'Failed while waiting for the server public IP.',
                 previous: $lastException,
             );
         }
@@ -211,15 +213,14 @@ class DigitalOceanDropletCreator
     {
         $request = $this->httpFactory
             ->createRequest($method, self::API_BASE.$path)
-            ->withHeader('Authorization', 'Bearer '.$apiKey);
+            ->withHeader('Authorization', 'Bearer '.$apiKey)
+            ->withHeader('Content-Type', 'application/json');
 
         if ($payload === null) {
             return $request;
         }
 
-        return $request
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody($this->httpFactory->createStream($payload));
+        return $request->withBody($this->httpFactory->createStream($payload));
     }
 
     /**
@@ -230,7 +231,7 @@ class DigitalOceanDropletCreator
         $encodedPayload = json_encode($payload);
 
         if (! is_string($encodedPayload)) {
-            throw new DigitalOceanDropletException('Failed to encode the DigitalOcean API request payload.');
+            throw new HetznerServerException('Failed to encode the Hetzner API request payload.');
         }
 
         return $encodedPayload;
@@ -241,7 +242,7 @@ class DigitalOceanDropletCreator
         try {
             return $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $exception) {
-            throw new DigitalOceanDropletException('HTTP request failed: '.$exception->getMessage(), previous: $exception);
+            throw new HetznerServerException('HTTP request failed: '.$exception->getMessage(), previous: $exception);
         }
     }
 
@@ -253,20 +254,20 @@ class DigitalOceanDropletCreator
         $decoded = json_decode((string) $response->getBody(), true);
 
         if (! is_array($decoded)) {
-            throw new DigitalOceanDropletException('DigitalOcean API returned an invalid JSON response.');
+            throw new HetznerServerException('Hetzner API returned an invalid JSON response.');
         }
 
         return $decoded;
     }
 
-    private function guardPollingConfiguration(CreateDigitalOceanDropletData $data): void
+    private function guardPollingConfiguration(CreateHetznerServerData $data): void
     {
         if ($data->publicIpPollAttempts < 1) {
-            throw new DigitalOceanDropletException('Public IP poll attempts must be greater than zero.');
+            throw new HetznerServerException('Public IP poll attempts must be greater than zero.');
         }
 
         if ($data->publicIpPollIntervalSeconds < 1) {
-            throw new DigitalOceanDropletException('Public IP poll interval must be greater than zero.');
+            throw new HetznerServerException('Public IP poll interval must be greater than zero.');
         }
     }
 }

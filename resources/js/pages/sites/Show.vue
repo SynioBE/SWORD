@@ -9,10 +9,13 @@ import {
     Activity,
     Trash2,
     ExternalLink,
+    Archive,
+    RotateCcw,
 } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogClose,
@@ -26,13 +29,29 @@ import {
 import DeploymentCelebration from '@/components/DeploymentCelebration.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/create-wp-site-steps';
-import { index as sitesIndex, show as sitesShow } from '@/routes/sites';
-import { destroy as sitesDestroy } from '@/routes/sites';
+import {
+    index as sitesIndex,
+    show as sitesShow,
+    destroy as sitesDestroy,
+    backup as sitesBackup,
+    restore as sitesRestore,
+} from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
 
 interface InstallStep {
     step: string;
     timestamp: string;
+}
+
+interface BackupRunRow {
+    id: number;
+    destination_name: string;
+    status: string;
+    archive_name: string | null;
+    size_bytes: number | null;
+    duration_seconds: number | null;
+    started_at: string | null;
+    completed_at: string | null;
 }
 
 interface SiteDetail {
@@ -54,6 +73,7 @@ interface SiteDetail {
 
 const props = defineProps<{
     site: SiteDetail;
+    backupRuns: BackupRunRow[];
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -199,6 +219,66 @@ function isStepActive(index: number): boolean {
     return index === nextIndex && index < STEP_KEYS.length;
 }
 
+// ── Backup / Restore ────────────────────────────────────────
+function formatBytes(bytes: number | null): string {
+    if (bytes === null) return '—';
+    if (bytes < 1_000) return `${bytes} B`;
+    if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+    if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+    return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
+}
+
+function formatDuration(seconds: number | null): string {
+    if (seconds === null) return '—';
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
+}
+
+function runStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+    switch (status) {
+        case 'completed':
+            return 'default';
+        case 'running':
+            return 'secondary';
+        case 'failed':
+            return 'destructive';
+        default:
+            return 'outline';
+    }
+}
+
+const backupForm = useForm({});
+
+function createBackup() {
+    backupForm.post(sitesBackup(props.site.id).url);
+}
+
+const showRestoreDialog = ref(false);
+const restoreTarget = ref<BackupRunRow | null>(null);
+const restoreForm = useForm({});
+
+function confirmRestore(run: BackupRunRow) {
+    restoreTarget.value = run;
+    showRestoreDialog.value = true;
+}
+
+function submitRestore() {
+    if (!restoreTarget.value) return;
+    restoreForm.post(
+        sitesRestore({ site: props.site.id, backup_run: restoreTarget.value.id }).url,
+        {
+            onSuccess: () => {
+                showRestoreDialog.value = false;
+                restoreTarget.value = null;
+            },
+        },
+    );
+}
+
 const completedStepKeys = computed(
     () => new Set(props.site.install_log.map((l) => l.step)),
 );
@@ -228,7 +308,9 @@ const showCelebration = ref(false);
 
 // ── Delete site ───────────────────────────────────────────
 const showDeleteDialog = ref(false);
-const deleteForm = useForm({});
+const deleteForm = useForm({
+    delete_backups: false,
+});
 
 function deleteSite() {
     deleteForm.delete(sitesDestroy(props.site.id).url, {
@@ -322,6 +404,16 @@ function deleteSite() {
                                     cannot be undone.
                                 </DialogDescription>
                             </DialogHeader>
+                            <div v-if="backupRuns.length > 0" class="flex items-center gap-2 py-2">
+                                <Checkbox
+                                    id="delete-backups"
+                                    :checked="deleteForm.delete_backups"
+                                    @update:checked="deleteForm.delete_backups = $event"
+                                />
+                                <label for="delete-backups" class="text-sm">
+                                    Also delete all backups from backup destinations
+                                </label>
+                            </div>
                             <DialogFooter>
                                 <DialogClose as-child>
                                     <Button variant="outline">Cancel</Button>
@@ -496,6 +588,113 @@ function deleteSite() {
                     </div>
                 </div>
             </template>
+
+            <!-- Backups -->
+            <div
+                v-if="isInstalled"
+                class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
+            >
+                <div
+                    class="flex items-center gap-3 border-b border-sidebar-border/70 px-5 py-4 dark:border-sidebar-border"
+                >
+                    <Archive class="size-5 shrink-0 text-muted-foreground" />
+                    <p class="text-sm font-medium">Backups</p>
+                    <div class="ml-auto flex items-center gap-3">
+                        <span v-if="backupRuns.length > 0" class="text-xs text-muted-foreground">
+                            {{ backupRuns.length }} backup{{ backupRuns.length !== 1 ? 's' : '' }}
+                        </span>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            :disabled="backupForm.processing"
+                            @click="createBackup"
+                        >
+                            <Loader2 v-if="backupForm.processing" class="size-3.5 animate-spin" />
+                            <Archive v-else class="size-3.5" />
+                            Create Backup
+                        </Button>
+                    </div>
+                </div>
+
+                <div v-if="backupForm.errors.backup" class="px-5 py-3">
+                    <p class="text-sm text-destructive">{{ backupForm.errors.backup }}</p>
+                </div>
+
+                <div v-if="backupRuns.length === 0 && !backupForm.errors.backup" class="px-5 py-8 text-center text-sm text-muted-foreground">
+                    No backups yet. Click "Create Backup" to get started.
+                </div>
+
+                <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
+                    <div
+                        v-for="run in backupRuns"
+                        :key="run.id"
+                        class="flex items-center justify-between px-5 py-3"
+                    >
+                        <div>
+                            <p class="text-sm font-medium">
+                                {{ run.archive_name ?? 'Backup #' + run.id }}
+                            </p>
+                            <p class="mt-0.5 text-xs text-muted-foreground">
+                                {{ run.destination_name }}
+                                <template v-if="run.duration_seconds !== null">
+                                    <span class="mx-1.5">·</span>
+                                    {{ formatDuration(run.duration_seconds) }}
+                                </template>
+                                <template v-if="run.size_bytes !== null">
+                                    <span class="mx-1.5">·</span>
+                                    {{ formatBytes(run.size_bytes) }}
+                                </template>
+                                <template v-if="run.completed_at">
+                                    <span class="mx-1.5">·</span>
+                                    {{ new Date(run.completed_at).toLocaleString() }}
+                                </template>
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <Badge :variant="runStatusVariant(run.status)">
+                                <Loader2 v-if="run.status === 'running'" class="size-3 animate-spin" />
+                                {{ run.status }}
+                            </Badge>
+                            <Button
+                                v-if="run.status === 'completed'"
+                                variant="ghost"
+                                size="sm"
+                                @click="confirmRestore(run)"
+                            >
+                                <RotateCcw class="size-3.5" />
+                                Restore
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Restore confirmation dialog -->
+            <Dialog v-model:open="showRestoreDialog">
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Restore from backup</DialogTitle>
+                        <DialogDescription>
+                            This will replace the current site files and database with the backup
+                            <strong>{{ restoreTarget?.archive_name }}</strong>.
+                            This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <DialogClose as-child>
+                            <Button variant="outline">Cancel</Button>
+                        </DialogClose>
+                        <Button
+                            variant="destructive"
+                            :disabled="restoreForm.processing"
+                            @click="submitRestore"
+                        >
+                            <Loader2 v-if="restoreForm.processing" class="size-4 animate-spin" />
+                            Restore backup
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     </AppLayout>
 </template>

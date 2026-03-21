@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Hetzner\CreateHetznerServerData;
-use App\Services\Hetzner\HetznerServerCreator;
-use App\Services\Hetzner\HetznerServerException;
+use App\Services\Cloud\Hetzner\CreateHetznerServerData;
+use App\Services\Cloud\Hetzner\HetznerServerCreator;
+use App\Services\Cloud\Hetzner\HetznerServerException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -20,7 +20,7 @@ class CreateHetznerServer extends Command
 
     protected $description = 'Creates a Hetzner Cloud server';
 
-    private const HETZNER_API_SECRET_PATH = '/run/secrets/hetzner-api';
+    private const HETZNER_API_SECRET_PATH = '/run/secrets/hetzner_api_key';
 
     public function __construct(private readonly HetznerServerCreator $serverCreator)
     {

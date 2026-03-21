@@ -45,6 +45,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('sites', SiteController::class)
         ->only(['index', 'store', 'show', 'destroy']);
 
+    Route::post('sites/{site}/backup', [SiteController::class, 'backup'])
+        ->name('sites.backup');
+
+    Route::post('sites/{site}/restore/{backup_run}', [SiteController::class, 'restore'])
+        ->name('sites.restore');
+
     Route::get('cloudflare', [CloudflareController::class, 'index'])->name('cloudflare.index');
     Route::get('cloudflare/{integration}', [CloudflareController::class, 'zones'])->name('cloudflare.zones');
     Route::get('cloudflare/{integration}/{zone}', [CloudflareController::class, 'show'])->name('cloudflare.show');

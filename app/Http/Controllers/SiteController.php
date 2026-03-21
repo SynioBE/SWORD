@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Sites\StoreSiteRequest;
 use App\Http\Resources\SiteResource;
+use App\Jobs\BackupSiteJob;
+use App\Jobs\DeleteSiteBackupsJob;
 use App\Jobs\DeleteSiteJob;
 use App\Jobs\InstallSiteJob;
+use App\Jobs\RestoreSiteBackupJob;
+use App\Models\BackupRun;
 use App\Models\Site;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -69,16 +73,73 @@ class SiteController extends Controller
 
         $site->load('server:id,name,ip_address');
 
+        $backupRuns = $site->backupRuns()
+            ->with('backupDestination:id,name')
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(fn ($run) => [
+                'id' => $run->id,
+                'destination_name' => $run->backupDestination->name,
+                'status' => $run->status,
+                'archive_name' => $run->archive_name,
+                'size_bytes' => $run->size_bytes,
+                'duration_seconds' => $run->duration_seconds,
+                'started_at' => $run->started_at?->toIso8601String(),
+                'completed_at' => $run->completed_at?->toIso8601String(),
+            ]);
+
         return Inertia::render('sites/Show', [
             'site' => array_merge((new SiteResource($site))->resolve(), [
                 'callback_signature' => $site->callback_signature,
             ]),
+            'backupRuns' => $backupRuns,
         ]);
     }
+
+    public function backup(Request $request, Site $site): RedirectResponse
+    {
+        abort_unless($site->user_id === $request->user()->id, 403);
+
+        $schedule = $site->server->backupSchedules()->first();
+
+        if (! $schedule) {
+            return back()->withErrors([
+                'backup' => 'No backup destination is configured for this server. Add a backup schedule first.',
+            ]);
+        }
+
+        BackupSiteJob::dispatch($site, $schedule);
+
+        return back();
+    }
+
+    public function restore(Request $request, Site $site, BackupRun $backupRun): RedirectResponse
+    {
+        abort_unless($site->user_id === $request->user()->id, 403);
+        abort_unless($backupRun->site_id === $site->id, 403);
+        abort_unless($backupRun->status === 'completed', 422);
+
+        RestoreSiteBackupJob::dispatch($backupRun, $site);
+
+        return back();
+    }
+
 
     public function destroy(Request $request, Site $site): RedirectResponse
     {
         abort_unless($site->user_id === $request->user()->id, 403);
+
+        if ($request->boolean('delete_backups')) {
+            $destinationIds = $site->server->backupSchedules()
+                ->pluck('backup_destination_id')
+                ->unique()
+                ->all();
+
+            if (! empty($destinationIds)) {
+                DeleteSiteBackupsJob::dispatch($site->server, $site->domain, $destinationIds);
+            }
+        }
 
         DeleteSiteJob::dispatch($site);
 

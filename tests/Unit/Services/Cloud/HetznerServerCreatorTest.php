@@ -1,7 +1,7 @@
 <?php
 
-use App\Services\Hetzner\CreateHetznerServerData;
-use App\Services\Hetzner\HetznerServerCreator;
+use App\Services\Cloud\Hetzner\CreateHetznerServerData;
+use App\Services\Cloud\Hetzner\HetznerServerCreator;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Psr\Http\Client\ClientInterface;
@@ -67,7 +67,7 @@ test('HetznerServerCreator uploads a raw SSH key and returns server details', fu
             'ssh_keys' => [44],
             'public_net' => [
                 'ipv4_enabled' => true,
-                'ipv6_enabled' => true,
+                'ipv6_enabled' => false,
             ],
         ]);
 });
