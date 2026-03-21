@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\BackupDestinations\StoreBackupDestinationRequest;
+use App\Http\Requests\BackupDestinations\UpdateBackupDestinationRequest;
 use App\Models\BackupDestination;
 use App\Services\ServerNameGenerator;
 use Illuminate\Http\JsonResponse;
@@ -10,6 +11,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use phpseclib3\Crypt\PublicKeyLoader;
+use phpseclib3\Net\SSH2;
 
 class BackupDestinationController extends Controller
 {
@@ -46,9 +49,61 @@ class BackupDestinationController extends Controller
 
     public function store(StoreBackupDestinationRequest $request): RedirectResponse
     {
-        $destination = $request->user()->backupDestinations()->create($request->validated());
+        $validated = $request->validated();
+
+        $connectionResult = $this->testConnection($validated);
+
+        $destination = $request->user()->backupDestinations()->create(array_merge($validated, [
+            'status' => $connectionResult['connected'] ? 'connected' : 'error',
+            'last_connected_at' => $connectionResult['connected'] ? now() : null,
+        ]));
+
+        if (! $connectionResult['connected']) {
+            return redirect()->route('backup-destinations.show', $destination)
+                ->with('error', $connectionResult['error']);
+        }
 
         return redirect()->route('backup-destinations.show', $destination);
+    }
+
+    /**
+     * @return array{connected: bool, error: string|null}
+     */
+    private function testConnection(array $config): array
+    {
+        try {
+            $ssh = new SSH2($config['host'], $config['port']);
+            $ssh->setTimeout(10);
+
+            if ($config['auth_method'] === 'ssh_key') {
+                $key = PublicKeyLoader::load($config['ssh_private_key']);
+                $authenticated = $ssh->login($config['username'], $key);
+            } else {
+                $authenticated = $ssh->login($config['username'], $config['password']);
+            }
+
+            if (! $authenticated) {
+                return ['connected' => false, 'error' => 'Authentication failed. Check your credentials.'];
+            }
+
+            $storagePath = rtrim($config['storage_path'], '/');
+            $escapedPath = escapeshellarg($storagePath);
+
+            // Check if directory exists, create it if not
+            $result = $ssh->exec("test -d {$escapedPath} && echo EXISTS || mkdir -p {$escapedPath} && echo CREATED 2>&1");
+
+            if (! str_contains($result, 'EXISTS') && ! str_contains($result, 'CREATED')) {
+                $ssh->disconnect();
+
+                return ['connected' => false, 'error' => "Could not access or create storage path: {$storagePath}"];
+            }
+
+            $ssh->disconnect();
+
+            return ['connected' => true, 'error' => null];
+        } catch (\Throwable $e) {
+            return ['connected' => false, 'error' => 'Connection failed: '.$e->getMessage()];
+        }
     }
 
     public function show(Request $request, BackupDestination $backupDestination): Response
@@ -72,6 +127,23 @@ class BackupDestinationController extends Controller
                 'created_at' => $schedule->created_at->toIso8601String(),
             ]);
 
+        $recentRuns = $backupDestination->backupRuns()
+            ->with('server')
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get()
+            ->map(fn ($run) => [
+                'id' => $run->id,
+                'server_name' => $run->server->name,
+                'status' => $run->status,
+                'archive_name' => $run->archive_name,
+                'size_bytes' => $run->size_bytes,
+                'duration_seconds' => $run->duration_seconds,
+                'started_at' => $run->started_at?->toIso8601String(),
+                'completed_at' => $run->completed_at?->toIso8601String(),
+                'created_at' => $run->created_at->toIso8601String(),
+            ]);
+
         return Inertia::render('backup-destinations/Show', [
             'destination' => [
                 'id' => $backupDestination->id,
@@ -87,7 +159,38 @@ class BackupDestinationController extends Controller
                 'created_at' => $backupDestination->created_at->toIso8601String(),
             ],
             'schedules' => $schedules,
+            'recentRuns' => $recentRuns,
         ]);
+    }
+
+    public function update(UpdateBackupDestinationRequest $request, BackupDestination $backupDestination): RedirectResponse
+    {
+        abort_unless($backupDestination->user_id === $request->user()->id, 403);
+
+        $validated = $request->validated();
+
+        // Preserve existing credentials when empty strings are submitted
+        if ($backupDestination->auth_method === 'password' && empty($validated['password'])) {
+            $validated['password'] = $backupDestination->password;
+        }
+
+        if ($backupDestination->auth_method === 'ssh_key' && empty($validated['ssh_private_key'])) {
+            $validated['ssh_private_key'] = $backupDestination->ssh_private_key;
+        }
+
+        $connectionResult = $this->testConnection($validated);
+
+        $backupDestination->update(array_merge($validated, [
+            'status' => $connectionResult['connected'] ? 'connected' : 'error',
+            'last_connected_at' => $connectionResult['connected'] ? now() : $backupDestination->last_connected_at,
+        ]));
+
+        if (! $connectionResult['connected']) {
+            return redirect()->route('backup-destinations.show', $backupDestination)
+                ->with('error', $connectionResult['error']);
+        }
+
+        return redirect()->route('backup-destinations.show', $backupDestination);
     }
 
     public function destroy(Request $request, BackupDestination $backupDestination): RedirectResponse

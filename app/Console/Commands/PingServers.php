@@ -8,14 +8,15 @@ use Illuminate\Console\Command;
 class PingServers extends Command
 {
     protected $signature = 'servers:ping';
+
     protected $description = 'Check online status of all provisioned servers via TCP';
 
     public function handle(): void
     {
         $servers = Server::query()
-                         ->where('status', 'provisioned')
-                         ->whereNotNull('ip_address')
-                         ->get();
+            ->where('status', 'provisioned')
+            ->whereNotNull('ip_address')
+            ->get();
 
         if ($servers->isEmpty()) {
             return;
@@ -29,7 +30,7 @@ class PingServers extends Command
                 "tcp://{$server->ip_address}:{$server->ssh_port}",
                 $errno,
                 $errstr,
-                0,
+                0, // Must be 0 with STREAM_CLIENT_ASYNC_CONNECT for truly non-blocking
                 STREAM_CLIENT_ASYNC_CONNECT | STREAM_CLIENT_CONNECT,
             );
 
@@ -41,7 +42,8 @@ class PingServers extends Command
 
         // Wait at most 5 seconds for all connections to complete in parallel
         $writable = array_values($pending);
-        $readable = $exceptional = [];
+        $readable = [];
+        $exceptional = array_values($pending); // Must watch for errors too
 
         if (! empty($writable)) {
             stream_select($readable, $writable, $exceptional, 5);

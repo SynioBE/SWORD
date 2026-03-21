@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import {
     Globe,
     Plus,
@@ -61,12 +61,17 @@ const props = defineProps<{
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Sites', href: sitesIndex() }];
 
+const page = usePage();
 const showAddModal = ref(false);
 
 const form = useForm({
     server_id: '' as number | '',
     domain: '',
     php_version: '8.3',
+    wp_admin_user: '',
+    wp_admin_password: '',
+    wp_admin_email: page.props.auth.user.email ?? '',
+    wp_admin_display_name: page.props.auth.user.name ?? '',
 });
 
 const phpVersions = ['8.1', '8.2', '8.3', '8.4'];
@@ -290,6 +295,58 @@ function statusLabel(status: string): string {
                                 </option>
                             </select>
                             <InputError :message="form.errors.php_version" />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-wp-admin-user"
+                                >WP Admin Username</label
+                            >
+                            <Input
+                                id="site-wp-admin-user"
+                                v-model="form.wp_admin_user"
+                                placeholder="e.g. admin"
+                                :disabled="form.processing"
+                            />
+                            <InputError :message="form.errors.wp_admin_user" />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-wp-admin-password"
+                                >WP Admin Password</label
+                            >
+                            <Input
+                                id="site-wp-admin-password"
+                                v-model="form.wp_admin_password"
+                                type="password"
+                                placeholder="Min. 8 characters"
+                                :disabled="form.processing"
+                            />
+                            <InputError :message="form.errors.wp_admin_password" />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-wp-admin-email"
+                                >WP Admin Email</label
+                            >
+                            <Input
+                                id="site-wp-admin-email"
+                                v-model="form.wp_admin_email"
+                                type="email"
+                                :disabled="form.processing"
+                            />
+                            <InputError :message="form.errors.wp_admin_email" />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-wp-admin-display-name"
+                                >WP Admin Display Name</label
+                            >
+                            <Input
+                                id="site-wp-admin-display-name"
+                                v-model="form.wp_admin_display_name"
+                                :disabled="form.processing"
+                            />
+                            <InputError :message="form.errors.wp_admin_display_name" />
                         </div>
                     </template>
 

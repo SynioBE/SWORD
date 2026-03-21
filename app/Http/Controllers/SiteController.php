@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Sites\StoreSiteRequest;
 use App\Http\Resources\SiteResource;
+use App\Jobs\DeleteSiteJob;
 use App\Jobs\InstallSiteJob;
 use App\Models\Site;
 use Illuminate\Http\RedirectResponse;
@@ -51,7 +52,13 @@ class SiteController extends Controller
             'db_password' => Str::random(24),
         ]);
 
-        InstallSiteJob::dispatch($site);
+        InstallSiteJob::dispatch(
+            $site,
+            $validated['wp_admin_user'],
+            $validated['wp_admin_password'],
+            $validated['wp_admin_email'],
+            $validated['wp_admin_display_name'],
+        );
 
         return redirect()->route('sites.show', $site);
     }
@@ -69,6 +76,15 @@ class SiteController extends Controller
         ]);
     }
 
+    public function destroy(Request $request, Site $site): RedirectResponse
+    {
+        abort_unless($site->user_id === $request->user()->id, 403);
+
+        DeleteSiteJob::dispatch($site);
+
+        return redirect()->route('sites.index');
+    }
+
     public function installScript(Request $request, Site $site): \Illuminate\Http\Response
     {
         abort_unless($request->query('token') === $site->install_token, 403);
@@ -76,10 +92,26 @@ class SiteController extends Controller
         $script = view('server-scripts.sites.create-wp', [
             'site' => $site,
             'server' => $site->server,
+            'wpAdminUser' => $request->query('wp_admin_user', 'sword_admin'),
+            'wpAdminPassword' => $request->query('wp_admin_password', Str::random(20)),
+            'adminEmail' => $request->query('wp_admin_email', $site->user->email),
+            'adminDisplayName' => $request->query('wp_admin_display_name', $site->user->name),
             'callbackUrl' => route('sites.callbacks.install', [
                 'site' => $site->id,
                 'signature' => $site->callback_signature,
             ]),
+        ])->render();
+
+        return response($script, 200, ['Content-Type' => 'text/x-shellscript']);
+    }
+
+    public function deleteScript(Request $request, Site $site): \Illuminate\Http\Response
+    {
+        abort_unless($request->query('token') === $site->install_token, 403);
+
+        $script = view('server-scripts.sites.delete-wp', [
+            'site' => $site,
+            'server' => $site->server,
         ])->render();
 
         return response($script, 200, ['Content-Type' => 'text/x-shellscript']);

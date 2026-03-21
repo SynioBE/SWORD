@@ -12,7 +12,13 @@ class InstallSiteJob implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public readonly Site $site) {}
+    public function __construct(
+        public readonly Site $site,
+        public readonly string $wpAdminUser,
+        public readonly string $wpAdminPassword,
+        public readonly string $wpAdminEmail,
+        public readonly string $wpAdminDisplayName,
+    ) {}
 
     public function handle(): void
     {
@@ -22,6 +28,10 @@ class InstallSiteJob implements ShouldQueue
         $installUrl = route('sites.scripts.install', [
             'site' => $site->id,
             'token' => $site->install_token,
+            'wp_admin_user' => $this->wpAdminUser,
+            'wp_admin_password' => $this->wpAdminPassword,
+            'wp_admin_email' => $this->wpAdminEmail,
+            'wp_admin_display_name' => $this->wpAdminDisplayName,
         ]);
 
         $privateKey = EC::loadFormat('OpenSSH', $server->ssh_private_key);

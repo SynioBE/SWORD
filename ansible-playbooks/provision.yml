@@ -1,0 +1,651 @@
+---
+- name: SWORD Server Provisioning
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    # These must be passed via --extra-vars:
+    #   callback_url, server_name, server_id, server_hostname,
+    #   ssh_public_key, timezone, sudo_password, ssh_port,
+    #   mysql_root_password
+
+    swap_packages:
+      - curl
+      - wget
+      - git
+      - zip
+      - unzip
+      - gzip
+      - tar
+      - rsync
+      - bc
+      - openssl
+      - jq
+      - gnupg
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - lsb-release
+      - whois
+      - cron
+      - ufw
+      - borgbackup
+      - sshpass
+
+    docker_packages:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+
+    docker_daemon_config:
+      log-driver: json-file
+      log-opts:
+        max-size: "50m"
+        max-file: "3"
+      live-restore: true
+      default-address-pools:
+        - base: "10.240.0.0/16"
+          size: 24
+
+    git_known_hosts:
+      - github.com
+      - gitlab.com
+      - bitbucket.org
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Restart docker
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+
+    - name: Reload sysctl
+      ansible.builtin.command:
+        cmd: sysctl -p
+
+  tasks:
+    # ── Progress: started ──────────────────────────────────
+    - name: Notify progress - started
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: started
+        validate_certs: false
+      ignore_errors: true
+
+    # ── IPv4 preference ────────────────────────────────────
+    - name: Prefer IPv4 over IPv6
+      ansible.builtin.replace:
+        path: /etc/gai.conf
+        regexp: '#precedence ::ffff:0:0/96  100'
+        replace: 'precedence ::ffff:0:0/96  100'
+
+    # ── Swap ───────────────────────────────────────────────
+    - name: Get total RAM in KB
+      ansible.builtin.set_fact:
+        ram_kb: "{{ ansible_memtotal_mb * 1024 }}"
+        ram_gb: "{{ ((ansible_memtotal_mb + 1023) / 1024) | int }}"
+
+    - name: Calculate swap size
+      ansible.builtin.set_fact:
+        swap_gb: >-
+          {% if ram_gb | int <= 2 %}{{ (ram_gb | int) * 2 }}
+          {% elif ram_gb | int <= 8 %}{{ ram_gb | int }}
+          {% elif ram_gb | int <= 64 %}{{ (ram_gb | int / 2) | int }}
+          {% else %}32{% endif %}
+
+    - name: Check if swapfile exists
+      ansible.builtin.stat:
+        path: /swapfile
+      register: swapfile_stat
+
+    - name: Create swapfile
+      when: not swapfile_stat.stat.exists
+      block:
+        - name: Allocate swapfile
+          ansible.builtin.command:
+            cmd: "fallocate -l {{ swap_gb | trim }}G /swapfile"
+            creates: /swapfile
+
+        - name: Set swapfile permissions
+          ansible.builtin.file:
+            path: /swapfile
+            mode: "0600"
+
+        - name: Format swapfile
+          ansible.builtin.command:
+            cmd: mkswap /swapfile
+
+        - name: Enable swapfile
+          ansible.builtin.command:
+            cmd: swapon /swapfile
+
+        - name: Add swapfile to fstab
+          ansible.builtin.lineinfile:
+            path: /etc/fstab
+            regexp: '^\s*/swapfile\s+none\s+swap\s+'
+            line: '/swapfile none swap sw 0 0'
+            create: true
+
+    - name: Set vm.swappiness
+      ansible.posix.sysctl:
+        name: vm.swappiness
+        value: "10"
+        state: present
+        reload: true
+
+    - name: Set vm.vfs_cache_pressure
+      ansible.posix.sysctl:
+        name: vm.vfs_cache_pressure
+        value: "50"
+        state: present
+        reload: true
+
+    - name: Notify progress - configuring_swap
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: configuring_swap
+        validate_certs: false
+      ignore_errors: true
+
+    # ── OS upgrade & Extra packages ────────────────────────
+    - name: Wait for apt locks to be released
+      ansible.builtin.shell: |
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+          sleep 3
+        done
+      changed_when: false
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: true
+
+    - name: Notify progress - os_upgrade
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: os_upgrade
+        validate_certs: false
+      ignore_errors: true
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name: "{{ swap_packages }}"
+        state: present
+
+    - name: Notify progress - install_packages
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: install_packages
+        validate_certs: false
+      ignore_errors: true
+
+    # ── Cron ───────────────────────────────────────────────
+    - name: Enable and start cron service
+      ansible.builtin.service:
+        name: cron
+        enabled: true
+        state: started
+
+    # ── Docker ─────────────────────────────────────────────
+    - name: Create apt keyrings directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Dearmor Docker GPG key
+      ansible.builtin.shell: |
+        gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg < /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_architecture | regex_replace('x86_64', 'amd64') | regex_replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+
+    - name: Install Docker packages
+      ansible.builtin.apt:
+        name: "{{ docker_packages }}"
+        state: present
+        update_cache: true
+
+    - name: Create Docker config directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+
+    - name: Configure Docker daemon
+      ansible.builtin.copy:
+        content: "{{ docker_daemon_config | to_nice_json }}\n"
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+      notify: Restart docker
+
+    - name: Enable and start Docker
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Notify progress - docker_setup
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: docker_setup
+        validate_certs: false
+      ignore_errors: true
+
+    # ── SSH setup ──────────────────────────────────────────
+    - name: Generate SSH host keys
+      ansible.builtin.command:
+        cmd: ssh-keygen -A
+      changed_when: false
+      notify: Restart ssh
+
+    - name: Set hostname in /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+'
+        line: "127.0.0.1 {{ server_hostname }}.localdomain {{ server_hostname }}"
+        create: true
+
+    - name: Ensure root .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+
+    - name: Ensure root authorized_keys exists
+      ansible.builtin.file:
+        path: /root/.ssh/authorized_keys
+        state: touch
+        mode: "0600"
+      changed_when: false
+
+    - name: Authorize SWORD SSH key for root
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ ssh_public_key }}"
+        create: true
+        mode: "0600"
+
+    - name: Notify progress - ssh_setup
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: ssh_setup
+        validate_certs: false
+      ignore_errors: true
+
+    # ── Hostname and Timezone ──────────────────────────────
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ server_hostname }}"
+
+    - name: Set timezone
+      community.general.timezone:
+        name: "{{ timezone }}"
+
+    # ── SWORD user ─────────────────────────────────────────
+    - name: Create sword user
+      ansible.builtin.user:
+        name: sword
+        shell: /bin/bash
+        create_home: true
+        groups:
+          - docker
+          - sudo
+        append: true
+        password: "{{ sudo_password | password_hash('sha512') }}"
+
+    - name: Ensure sword .ssh directory exists
+      ansible.builtin.file:
+        path: /home/sword/.ssh
+        state: directory
+        owner: sword
+        group: sword
+        mode: "0700"
+
+    - name: Generate SSH key pair for sword user
+      ansible.builtin.openssh_keypair:
+        path: /home/sword/.ssh/id_ed25519
+        type: ed25519
+        comment: "sword-{{ server_id }}"
+        owner: sword
+        group: sword
+        mode: "0700"
+
+    - name: Copy root authorized_keys to sword user
+      ansible.builtin.copy:
+        src: /root/.ssh/authorized_keys
+        dest: /home/sword/.ssh/authorized_keys
+        remote_src: true
+        owner: sword
+        group: sword
+        mode: "0600"
+      ignore_errors: true
+
+    - name: Add Git hosting services to known_hosts
+      ansible.builtin.known_hosts:
+        path: /etc/ssh/ssh_known_hosts
+        name: "{{ item }}"
+        key: "{{ lookup('pipe', 'ssh-keyscan -H ' + item + ' 2>/dev/null') }}"
+      loop: "{{ git_known_hosts }}"
+      ignore_errors: true
+
+    - name: Set ownership of sword home directory
+      ansible.builtin.file:
+        path: /home/sword
+        owner: sword
+        group: sword
+        recurse: true
+
+    - name: Notify progress - user_setup
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: user_setup
+        validate_certs: false
+      ignore_errors: true
+
+    # ── Firewall ───────────────────────────────────────────
+    - name: Reset UFW
+      community.general.ufw:
+        state: reset
+
+    - name: Set UFW default deny incoming
+      community.general.ufw:
+        direction: incoming
+        default: deny
+
+    - name: Set UFW default allow outgoing
+      community.general.ufw:
+        direction: outgoing
+        default: allow
+
+    - name: Allow SSH through UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ ansible_port | default(22) }}"
+        proto: tcp
+        comment: SSH
+
+    - name: Allow HTTP through UFW
+      community.general.ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+        comment: HTTP
+
+    - name: Allow HTTPS through UFW
+      community.general.ufw:
+        rule: allow
+        port: "443"
+        proto: tcp
+        comment: HTTPS
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Notify progress - firewall_setup
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: firewall_setup
+        validate_certs: false
+      ignore_errors: true
+
+    # ── Unattended upgrades ────────────────────────────────
+    - name: Install unattended-upgrades
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Configure auto-upgrades
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - name: Configure unattended-upgrades
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        mode: "0644"
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::Automatic-Reboot "false";
+
+    - name: Notify progress - security_updates
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioning
+          step: security_updates
+        validate_certs: false
+      ignore_errors: true
+
+    # ── Sword global dirs ──────────────────────────────────
+    - name: Create SWORD directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: sword
+        group: sword
+      loop:
+        - /srv/sword
+        - /srv/sword/sites
+
+    # ── Traefik + shared services ──────────────────────────
+    - name: Pull Docker images
+      community.docker.docker_image:
+        name: "{{ item }}"
+        source: pull
+      loop:
+        - traefik:v3
+        - mysql:8.0
+        - mcuadros/ofelia:latest
+        - fnsys/dockhand:latest
+
+    - name: Create MySQL data directory
+      ansible.builtin.file:
+        path: /srv/sword/shared/mysql/data
+        state: directory
+        recurse: true
+
+    - name: Create shared .env file
+      ansible.builtin.copy:
+        dest: /srv/sword/shared/.env
+        mode: "0600"
+        content: |
+          MYSQL_ROOT_PASSWORD={{ mysql_root_password }}
+
+    - name: Create MySQL configuration
+      ansible.builtin.copy:
+        dest: /srv/sword/shared/mysql/my.cnf
+        mode: "0644"
+        content: |
+          [mysqld]
+          user=mysql
+          character-set-server=utf8mb4
+          collation-server=utf8mb4_unicode_ci
+
+          innodb_buffer_pool_size=1G
+          innodb_buffer_pool_instances=1
+          innodb_log_file_size=256M
+          innodb_flush_log_at_trx_commit=1
+          innodb_file_per_table=1
+          innodb_flush_method=O_DIRECT
+
+          max_connections=150
+          thread_cache_size=50
+          max_allowed_packet=64M
+          wait_timeout=60
+          interactive_timeout=60
+
+          table_open_cache=2000
+          tmp_table_size=64M
+          max_heap_table_size=64M
+
+          host_cache_size=0
+          skip-name-resolve
+          skip-log-bin
+
+          [mysql]
+          default-character-set=utf8mb4
+
+          [client]
+          default-character-set=utf8mb4
+
+    - name: Create Docker network
+      community.docker.docker_network:
+        name: sword_network
+
+    - name: Create shared docker-compose.yml
+      ansible.builtin.copy:
+        dest: /srv/sword/shared/docker-compose.yml
+        mode: "0644"
+        content: |
+          services:
+            traefik:
+              image: traefik:v3
+              container_name: sword_traefik
+              restart: unless-stopped
+              command:
+                - "--providers.docker=true"
+                - "--providers.docker.exposedbydefault=false"
+                - "--entrypoints.web.address=:80"
+                - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+                - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+                - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+                - "--entrypoints.websecure.address=:443"
+                - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+                - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+                - "--certificatesresolvers.letsencrypt.acme.email=domains@syn.io"
+                - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+              ports:
+                - "80:80"
+                - "443:443"
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - /srv/sword/letsencrypt:/letsencrypt
+              networks:
+                - sword_network
+
+            mysql:
+              image: mysql:8.0
+              container_name: sword_mysql
+              restart: unless-stopped
+              environment:
+                MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+              volumes:
+                - /srv/sword/shared/mysql/data:/var/lib/mysql
+                - /srv/sword/shared/mysql/my.cnf:/etc/my.cnf
+              networks:
+                - sword_network
+
+            ofelia:
+              image: mcuadros/ofelia:latest
+              container_name: sword_ofelia
+              restart: unless-stopped
+              command: 'daemon --docker'
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+              networks:
+                - sword_network
+
+            dockhand:
+              image: fnsys/dockhand:latest
+              container_name: dockhand
+              restart: unless-stopped
+              ports:
+                - "3000:3000"
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+                - dockhand_data:/app/data
+
+          volumes:
+            dockhand_data:
+
+          networks:
+            sword_network:
+              name: sword_network
+              external: true
+
+    - name: Deploy shared services with Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose -f /srv/sword/shared/docker-compose.yml up -d
+      changed_when: true
+
+    - name: Notify progress - provisioned
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          status: provisioned
+          step: provisioned
+        validate_certs: false
+      ignore_errors: true
+
+    - name: Print completion message
+      ansible.builtin.debug:
+        msg: "SWORD provisioning complete! Server: {{ server_name }}"

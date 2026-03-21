@@ -48,4 +48,10 @@ class BackupDestination extends Model
     {
         return $this->hasMany(BackupSchedule::class);
     }
+
+    /** @return HasMany<BackupRun, $this> */
+    public function backupRuns(): HasMany
+    {
+        return $this->hasMany(BackupRun::class);
+    }
 }

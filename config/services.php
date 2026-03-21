@@ -43,4 +43,8 @@ return [
         ],
     ],
 
+    'ansible' => [
+        'enabled' => env('ANSIBLE_ENABLED', false),
+    ],
+
 ];

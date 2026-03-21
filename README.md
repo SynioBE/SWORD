@@ -1,8 +1,22 @@
 # How to run this project
 
-After cloning the repository and moving into the project directory, run the following commands.
+After cloning the repository and moving into the project directory, you can use the automated script or run the commands below.
 
 **You need Docker to work on this project in the way outlined below.** If you prefer to work without Docker, it is possible, but you'll have to set up everything yourself.
+
+## Quick start (recommended)
+
+From the repository root:
+
+```shell
+./run-dev.sh
+```
+
+On a fresh clone, this runs full setup (Composer via Docker, Sail, `.env`, migrations with seeders, npm) and then starts Vite. Later runs typically only start Sail and Vite. Use `./run-dev.sh --reset` for a clean Docker volume state and a fresh database. **See [docs/run-dev.md](docs/run-dev.md)** for options, logging, and how this differs from `setup.sh`.
+
+---
+
+If you prefer to run commands yourself, the sections below mirror what **`run-dev.sh`** performs on first-time setup.
 
 ## Install the required dependencies via Docker
 
@@ -50,7 +64,7 @@ composer mf
 ./vendor/bin/sail npm run dev
 ```
 
-The above steps are performed by the [setup](setup.sh) script.
+The above steps are automated by **`run-dev.sh`** (see [docs/run-dev.md](docs/run-dev.md)). The [setup](setup.sh) script performs a related Sail-based flow (including `tunnel:sync`) but does not run the initial Docker Composer install or the first-run detection logic.
 
 ## Connect to the Laravel application
 

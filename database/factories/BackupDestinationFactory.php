@@ -15,7 +15,7 @@ class BackupDestinationFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'name' => $this->faker->words(2, true).' backup',
+            'name' => fake()->word().'-'.fake()->word().' backup',
             'type' => 'borg',
             'host' => $this->faker->ipv4(),
             'port' => 22,

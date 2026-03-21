@@ -16,6 +16,7 @@ MYSQL_ROOT_PASSWORD="{{ $site->server->mysql_root_password }}"
 SITE_DIR="/srv/sword/sites/${DOMAIN}"
 STACK_DIR="/srv/sword/stacks/${DOMAIN}"
 WP_DIR="${SITE_DIR}/wordpress"
+CACHE_DIR="${STACK_DIR}/nginx-cache"
 
 echo "MYSQL ROOT PASSWORD: ${MYSQL_ROOT_PASSWORD}"
 
@@ -49,6 +50,7 @@ fi
 mkdir -p "${SITE_DIR}"
 mkdir -p "${STACK_DIR}"
 mkdir -p "${WP_DIR}"
+mkdir -p "${CACHE_DIR}"
 chown -R sword:sword "${SITE_DIR}"
 
 # ── Create MySQL database and user ───────────────────────
@@ -74,7 +76,7 @@ echo "Creating Dockerfile..."
 cat > "${STACK_DIR}/Dockerfile" <<DOCKERFILEEOF
 FROM php:${PHP_VERSION}-fpm-alpine
 
-# Install PHP extensions required by WordPress
+# Install PHP extensions required by WordPress + Redis
 RUN apk add --no-cache \
     freetype libpng libjpeg-turbo freetype-dev libpng-dev libjpeg-turbo-dev \
     libzip-dev icu-dev icu-libs libintl oniguruma-dev curl \
@@ -83,13 +85,27 @@ RUN apk add --no-cache \
     gd mysqli pdo pdo_mysql zip intl mbstring exif opcache \
     && apk del freetype-dev libpng-dev libjpeg-turbo-dev icu-dev
 
+# Install phpredis extension
+RUN apk add --no-cache --virtual .build-deps \$PHPIZE_DEPS \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && apk del .build-deps
+
 # Install WP-CLI
 RUN curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
     && chmod +x wp-cli.phar \
     && mv wp-cli.phar /usr/local/bin/wp
 
-# Raise PHP memory limit for WP-CLI and WordPress
-RUN echo 'memory_limit = 256M' > /usr/local/etc/php/conf.d/sword.ini
+# PHP tuning: memory, opcache, and upload settings
+RUN echo 'memory_limit = 256M' > /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'upload_max_filesize = 64M' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'post_max_size = 64M' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.enable = 1' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.memory_consumption = 128' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.interned_strings_buffer = 16' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.max_accelerated_files = 10000' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.revalidate_freq = 60' >> /usr/local/etc/php/conf.d/sword.ini \
+    && echo 'opcache.fast_shutdown = 1' >> /usr/local/etc/php/conf.d/sword.ini
 DOCKERFILEEOF
 
 # ── Write Docker Compose file ────────────────────────────
@@ -117,6 +133,19 @@ services:
       ofelia.job-exec.wpcron-{{ $site->id }}.user: www-data
       ofelia.job-exec.wpcron-{{ $site->id }}.command: 'wp cron event run --due-now'
 
+  redis:
+    image: redis:7-alpine
+    container_name: sword_{{ $site->id }}_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    networks:
+      - sword_network
+
   nginx:
     image: nginx:alpine
     container_name: sword_{{ $site->id }}_nginx
@@ -124,6 +153,7 @@ services:
     volumes:
       - ${WP_DIR}:/var/www/html:ro
       - ${STACK_DIR}/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${CACHE_DIR}:/var/cache/nginx/fastcgi:rw
     labels:
       - traefik.enable=true
       - traefik.http.routers.{{ $site->id }}.rule=Host(\`${DOMAIN}\`)
@@ -143,34 +173,75 @@ COMPOSEEOF
 echo "Creating Nginx config..."
 
 cat > "${STACK_DIR}/nginx.conf" <<NGINXEOF
+# ── FastCGI cache zone ───────────────────────────────────
+# 100m key zone (~800k keys), 1g max cache size, 60m inactive TTL
+fastcgi_cache_path /var/cache/nginx/fastcgi
+    levels=1:2
+    keys_zone=wp_fcgi:100m
+    max_size=1g
+    inactive=60m
+    use_temp_path=off;
+
+fastcgi_cache_key "\$scheme\$request_method\$host\$request_uri";
+
 server {
     listen 80;
     server_name ${DOMAIN};
     root /var/www/html;
     index index.php;
 
+    # ── Cache bypass conditions ──────────────────────────
+    # Bypass for logged-in users, WooCommerce sessions, and non-GET requests.
+    set \$skip_cache 0;
+
+    if (\$request_method = POST) { set \$skip_cache 1; }
+    if (\$query_string != "") { set \$skip_cache 1; }
+    if (\$request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") { set \$skip_cache 1; }
+    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set \$skip_cache 1; }
+
+    # ── Static assets ────────────────────────────────────
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|otf|eot|webp|avif)\$ {
+        expires max;
+        log_not_found off;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /favicon.ico { log_not_found off; access_log off; }
+    location = /robots.txt  { log_not_found off; access_log off; }
+
+    # ── Security ─────────────────────────────────────────
+    location ~* ^/wp-config\.php { deny all; }
+    location ~ /\. { deny all; }
+
+    # ── WordPress routing ────────────────────────────────
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
 
+    # ── PHP-FPM + FastCGI cache ──────────────────────────
     location ~ \.php\$ {
         fastcgi_pass php:9000;
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_param HTTPS on;
+
+        fastcgi_cache             wp_fcgi;
+        fastcgi_cache_valid       200 301 302 1h;
+        fastcgi_cache_use_stale   error timeout updating invalid_header http_500;
+        fastcgi_cache_lock        on;
+        fastcgi_cache_bypass      \$skip_cache;
+        fastcgi_no_cache          \$skip_cache;
+
+        # Expose cache status for debugging (X-Cache-Status: HIT / MISS / BYPASS)
+        add_header X-Cache-Status \$upstream_cache_status always;
+
+        fastcgi_buffers           16 16k;
+        fastcgi_buffer_size       32k;
+        fastcgi_read_timeout      120s;
+        fastcgi_connect_timeout   60s;
+        fastcgi_send_timeout      60s;
     }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)\$ {
-        expires max;
-        log_not_found off;
-    }
-
-    location = /favicon.ico { log_not_found off; access_log off; }
-    location = /robots.txt  { log_not_found off; access_log off; }
-
-    location ~* ^/wp-config\.php { deny all; }
-    location ~ /\. { deny all; }
 }
 NGINXEOF
 
@@ -199,7 +270,7 @@ docker exec "sword_{{ $site->id }}_php" wp core download \
 
 echo "Creating wp-config.php..."
 
-docker exec "sword_{{ $site->id }}_php" wp config create \
+docker exec -i "sword_{{ $site->id }}_php" wp config create \
     --path=/var/www/html \
     --dbname="${DB_NAME}" \
     --dbuser="${DB_USER}" \
@@ -210,30 +281,43 @@ docker exec "sword_{{ $site->id }}_php" wp config create \
     --extra-php <<'WPEXTRAEOF'
 /** Disable file editing in dashboard */
 define( 'DISALLOW_FILE_EDIT', true );
+
+/** Redis object cache */
+define( 'WP_REDIS_HOST', 'sword_{{ $site->id }}_redis' );
+define( 'WP_REDIS_PORT', 6379 );
+define( 'WP_REDIS_TIMEOUT', 1 );
+define( 'WP_REDIS_READ_TIMEOUT', 1 );
+define( 'WP_REDIS_DATABASE', 0 );
+define( 'WP_REDIS_PREFIX', '{{ $site->id }}:' );
+define( 'WP_REDIS_MAXTTL', 86400 );
+
+/** Nginx FastCGI cache helper */
+define( 'RT_WP_NGINX_HELPER_CACHE_PATH', '/var/cache/nginx/fastcgi' );
 WPEXTRAEOF
 
 # ── Run WordPress install ────────────────────────────────
 
 echo "Installing WordPress..."
 
-set +e
-WP_ADMIN_PASS="$(tr -dc 'A-Za-z0-9!@#%^&*' < /dev/urandom | head -c 20)"
-set -e
 docker exec "sword_{{ $site->id }}_php" wp core install \
     --path=/var/www/html \
     --url="https://${DOMAIN}" \
     --title="${DOMAIN}" \
-    --admin_user="sword_admin" \
-    --admin_password="${WP_ADMIN_PASS}" \
-    --admin_email="admin@${DOMAIN}" \
+    --admin_user="{{ $wpAdminUser }}" \
+    --admin_password="{{ $wpAdminPassword }}" \
+    --admin_email="{{ $adminEmail }}" \
     --skip-email \
+    --allow-root
+
+docker exec "sword_{{ $site->id }}_php" wp user update "{{ $wpAdminUser }}" \
+    --path=/var/www/html \
+    --display_name="{{ $adminDisplayName }}" \
     --allow-root
 
 echo ""
 echo "  WordPress admin credentials:"
 echo "  URL:      https://${DOMAIN}/wp-admin"
-echo "  User:     sword_admin"
-echo "  Password: ${WP_ADMIN_PASS}"
+echo "  User:     {{ $wpAdminUser }}"
 echo ""
 
 # ── Fix permissions ──────────────────────────────────────
@@ -249,6 +333,36 @@ echo "Removing default WP plugins..."
 docker exec "sword_{{ $site->id }}_php" wp plugin delete hello \
     --path=/var/www/html \
     --allow-root || true
+
+# ── Install & configure Redis object cache plugin ────────
+
+echo "Installing Redis Cache plugin..."
+
+docker exec "sword_{{ $site->id }}_php" wp plugin install redis-cache \
+    --path=/var/www/html \
+    --activate \
+    --allow-root
+
+docker exec "sword_{{ $site->id }}_php" wp redis enable \
+    --path=/var/www/html \
+    --skip-flush \
+    --allow-root || true
+
+# ── Install & configure Nginx Helper plugin ──────────────
+
+echo "Installing Nginx Helper plugin..."
+
+docker exec "sword_{{ $site->id }}_php" wp plugin install nginx-helper \
+    --path=/var/www/html \
+    --activate \
+    --allow-root
+
+# Configure Nginx Helper: enable FastCGI purge, set cache path
+docker exec "sword_{{ $site->id }}_php" wp option update rt_wp_nginx_helper_options \
+    '{"enable_purge":"1","cache_method":"enable_fastcgi","purge_method":"get_request","enable_map":null,"enable_log":null,"log_level":"INFO","log_filesize":"5","enable_stamp":null,"purge_homepage_on_edit":"1","purge_homepage_on_del":"1","purge_archive_on_edit":"1","purge_archive_on_del":"1","purge_archive_on_new_comment":"1","purge_archive_on_deleted_comment":"1","purge_page_on_mod":"1","purge_page_on_new_comment":"1","purge_page_on_deleted_comment":"1","redis_hostname":"sword_{{ $site->id }}_redis","redis_port":"6379","redis_prefix":"nginx_cache:","enable_purge_all":null,"nginx_helper_cache_path":"\/var\/cache\/nginx\/fastcgi"}' \
+    --format=json \
+    --path=/var/www/html \
+    --allow-root
 
 updateProgress "install_wordpress"
 
