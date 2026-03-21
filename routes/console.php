@@ -14,3 +14,5 @@ Schedule::command(PingServers::class)
     ->withoutOverlapping()
     ->onOneServer()
     ->everyMinute();
+
+Schedule::command('backup:dispatch')->everyMinute();

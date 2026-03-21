@@ -14,6 +14,8 @@ import {
     Trash2,
     Calendar,
     Plus,
+    Play,
+    Archive,
 } from 'lucide-vue-next';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import InputError from '@/components/InputError.vue';
@@ -44,6 +46,15 @@ import {
 } from '@/routes/servers/backup-schedules';
 import type { BreadcrumbItem } from '@/types';
 
+interface BackupRunSummary {
+    id: number;
+    status: string;
+    archive_name: string | null;
+    size_bytes: number | null;
+    duration_seconds: number | null;
+    completed_at: string | null;
+}
+
 interface BackupScheduleRow {
     id: number;
     backup_destination_id: number;
@@ -54,6 +65,19 @@ interface BackupScheduleRow {
     day_of_month: number | null;
     retention_count: number;
     is_enabled: boolean;
+    created_at: string;
+    last_run: BackupRunSummary | null;
+}
+
+interface BackupRunRow {
+    id: number;
+    destination_name: string;
+    status: string;
+    archive_name: string | null;
+    size_bytes: number | null;
+    duration_seconds: number | null;
+    started_at: string | null;
+    completed_at: string | null;
     created_at: string;
 }
 
@@ -88,6 +112,7 @@ const props = defineProps<{
     server: ServerDetail;
     backupSchedules: BackupScheduleRow[];
     backupDestinations: BackupDestinationOption[];
+    backupRuns: BackupRunRow[];
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -340,6 +365,54 @@ function scheduleLabel(schedule: BackupScheduleRow): string {
     return `Daily at ${schedule.time}`;
 }
 
+// ── Run backup now ───────────────────────────────────────────
+const runningScheduleId = ref<number | null>(null);
+
+function runBackupNow(schedule: BackupScheduleRow) {
+    runningScheduleId.value = schedule.id;
+    router.post(
+        `/servers/${props.server.id}/backup-schedules/${schedule.id}/run`,
+        {},
+        {
+            onFinish: () => {
+                runningScheduleId.value = null;
+            },
+        },
+    );
+}
+
+// ── Backup run helpers ───────────────────────────────────────
+function runStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+    switch (status) {
+        case 'completed':
+            return 'default';
+        case 'running':
+            return 'secondary';
+        case 'failed':
+            return 'destructive';
+        default:
+            return 'outline';
+    }
+}
+
+function formatBytes(bytes: number | null): string {
+    if (bytes === null) return '—';
+    if (bytes < 1_000) return `${bytes} B`;
+    if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+    if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+    return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
+}
+
+function formatDuration(seconds: number | null): string {
+    if (seconds === null) return '—';
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
+}
+
 // ── Delete server ────────────────────────────────────────────
 const showDeleteDialog = ref(false);
 const deleteForm = useForm({});
@@ -590,25 +663,6 @@ function deleteServer() {
                 </div>
             </template>
 
-            <!-- Failed state -->
-            <div
-                v-if="isFailed"
-                class="flex items-start gap-3 rounded-xl border border-destructive/50 bg-destructive/5 p-5"
-            >
-                <XCircle class="mt-0.5 size-5 shrink-0 text-destructive" />
-                <div>
-                    <p class="font-medium text-destructive">
-                        Provisioning failed
-                    </p>
-                    <p class="mt-1 text-sm text-muted-foreground">
-                        The script encountered an unexpected error. Check your
-                        server logs (<code class="text-xs"
-                            >sword-provision.log</code
-                        >) for details, then try provisioning again.
-                    </p>
-                </div>
-            </div>
-
             <!-- Provisioned: show log summary -->
             <template v-if="isProvisioned">
                 <div
@@ -664,9 +718,7 @@ function deleteServer() {
                     <div
                         class="flex items-center gap-3 border-b border-sidebar-border/70 px-5 py-4 dark:border-sidebar-border"
                     >
-                        <Calendar
-                            class="size-5 shrink-0 text-muted-foreground"
-                        />
+                        <Calendar class="size-5 shrink-0 text-muted-foreground" />
                         <p class="text-sm font-medium">Backup Schedules</p>
                         <span class="ml-auto">
                             <Button
@@ -680,52 +732,50 @@ function deleteServer() {
                         </span>
                     </div>
 
-                    <div
-                        v-if="backupSchedules.length === 0"
-                        class="px-5 py-8 text-center text-sm text-muted-foreground"
-                    >
+                    <div v-if="backupSchedules.length === 0" class="px-5 py-8 text-center text-sm text-muted-foreground">
                         <template v-if="backupDestinations.length === 0">
-                            Create a backup destination first to schedule
-                            backups.
+                            Create a backup destination first to schedule backups.
                         </template>
                         <template v-else>
                             No backup schedules configured for this server.
                         </template>
                     </div>
 
-                    <div
-                        v-else
-                        class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30"
-                    >
+                    <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
                         <div
                             v-for="schedule in backupSchedules"
                             :key="schedule.id"
                             class="flex items-center justify-between px-5 py-3"
                         >
                             <div>
-                                <p class="text-sm font-medium">
-                                    {{ schedule.destination_name }}
-                                </p>
+                                <p class="text-sm font-medium">{{ schedule.destination_name }}</p>
                                 <p class="mt-0.5 text-xs text-muted-foreground">
                                     {{ scheduleLabel(schedule) }}
                                     <span class="mx-1.5">·</span>
-                                    Retain
-                                    {{ schedule.retention_count }} backups
+                                    Retain {{ schedule.retention_count }} backups
+                                    <template v-if="schedule.last_run">
+                                        <span class="mx-1.5">·</span>
+                                        Last:
+                                        <Badge :variant="runStatusVariant(schedule.last_run.status)" class="ml-1 text-[10px] px-1.5 py-0">
+                                            {{ schedule.last_run.status }}
+                                        </Badge>
+                                    </template>
                                 </p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <Badge
-                                    :variant="
-                                        schedule.is_enabled
-                                            ? 'default'
-                                            : 'outline'
-                                    "
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    class="size-7"
+                                    :disabled="runningScheduleId === schedule.id"
+                                    @click="runBackupNow(schedule)"
+                                    title="Run now"
                                 >
-                                    {{
-                                        schedule.is_enabled
-                                            ? 'Enabled'
-                                            : 'Disabled'
-                                    }}
+                                    <Loader2 v-if="runningScheduleId === schedule.id" class="size-3.5 animate-spin" />
+                                    <Play v-else class="size-3.5" />
+                                </Button>
+                                <Badge :variant="schedule.is_enabled ? 'default' : 'outline'">
+                                    {{ schedule.is_enabled ? 'Enabled' : 'Disabled' }}
                                 </Badge>
                                 <Button
                                     variant="ghost"
@@ -736,6 +786,58 @@ function deleteServer() {
                                     <Trash2 class="size-3.5" />
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Backups -->
+                <div
+                    class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
+                >
+                    <div
+                        class="flex items-center gap-3 border-b border-sidebar-border/70 px-5 py-4 dark:border-sidebar-border"
+                    >
+                        <Archive class="size-5 shrink-0 text-muted-foreground" />
+                        <p class="text-sm font-medium">Recent Backups</p>
+                        <span class="ml-auto text-xs text-muted-foreground">
+                            {{ backupRuns.length }} run{{ backupRuns.length !== 1 ? 's' : '' }}
+                        </span>
+                    </div>
+
+                    <div v-if="backupRuns.length === 0" class="px-5 py-8 text-center text-sm text-muted-foreground">
+                        No backup runs yet. Backups will appear here after they execute.
+                    </div>
+
+                    <div v-else class="divide-y divide-sidebar-border/50 dark:divide-sidebar-border/30">
+                        <div
+                            v-for="run in backupRuns"
+                            :key="run.id"
+                            class="flex items-center justify-between px-5 py-3"
+                        >
+                            <div>
+                                <p class="text-sm font-medium">
+                                    {{ run.archive_name ?? run.destination_name }}
+                                </p>
+                                <p class="mt-0.5 text-xs text-muted-foreground">
+                                    {{ run.destination_name }}
+                                    <template v-if="run.duration_seconds !== null">
+                                        <span class="mx-1.5">·</span>
+                                        {{ formatDuration(run.duration_seconds) }}
+                                    </template>
+                                    <template v-if="run.size_bytes !== null">
+                                        <span class="mx-1.5">·</span>
+                                        {{ formatBytes(run.size_bytes) }}
+                                    </template>
+                                    <template v-if="run.completed_at">
+                                        <span class="mx-1.5">·</span>
+                                        {{ new Date(run.completed_at).toLocaleString() }}
+                                    </template>
+                                </p>
+                            </div>
+                            <Badge :variant="runStatusVariant(run.status)">
+                                <Loader2 v-if="run.status === 'running'" class="size-3 animate-spin" />
+                                {{ run.status }}
+                            </Badge>
                         </div>
                     </div>
                 </div>

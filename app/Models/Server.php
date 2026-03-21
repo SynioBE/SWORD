@@ -85,10 +85,22 @@ class Server extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<Site, $this> */
+    public function sites(): HasMany
+    {
+        return $this->hasMany(Site::class);
+    }
+
     /** @return HasMany<BackupSchedule, $this> */
     public function backupSchedules(): HasMany
     {
         return $this->hasMany(BackupSchedule::class);
+    }
+
+    /** @return HasMany<BackupRun, $this> */
+    public function backupRuns(): HasMany
+    {
+        return $this->hasMany(BackupRun::class);
     }
 
     public function isProvisioning(): bool

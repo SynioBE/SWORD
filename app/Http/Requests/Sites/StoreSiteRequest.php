@@ -25,6 +25,10 @@ class StoreSiteRequest extends FormRequest
             'server_id' => ['required', 'integer', Rule::exists('servers', 'id')->where('user_id', $this->user()->id)],
             'domain' => ['required', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'in:8.1,8.2,8.3,8.4'],
+            'wp_admin_user' => ['required', 'string', 'max:60'],
+            'wp_admin_password' => ['required', 'string', 'min:8'],
+            'wp_admin_email' => ['required', 'email', 'max:255'],
+            'wp_admin_display_name' => ['required', 'string', 'max:255'],
         ];
     }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import {
     Globe,
     CheckCircle2,
@@ -7,12 +7,25 @@ import {
     Loader2,
     XCircle,
     Activity,
+    Trash2,
 } from 'lucide-vue-next';
-import { computed, onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { STEP_LABELS, STEP_KEYS } from '@/lib/create-wp-site-steps';
 import { index as sitesIndex, show as sitesShow } from '@/routes/sites';
+import { destroy as sitesDestroy } from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
 
 interface InstallStep {
@@ -56,8 +69,8 @@ const isFailed = computed(() => props.site.status === 'failed');
 
 function startPolling() {
     if (pollInterval) {
-return;
-}
+        return;
+    }
 
     pollInterval = setInterval(() => {
         router.reload({ only: ['site'] });
@@ -132,15 +145,15 @@ function formatTime(iso: string): string {
 // The index of the last logged step (by log order, not step order) — supports re-runs
 const lastCompletedIndex = computed(() => {
     if (isInstalled.value) {
-return STEP_KEYS.length - 1;
-}
+        return STEP_KEYS.length - 1;
+    }
 
     for (let i = props.site.install_log.length - 1; i >= 0; i--) {
         const idx = STEP_KEYS.indexOf(props.site.install_log[i].step);
 
         if (idx !== -1) {
-return idx;
-}
+            return idx;
+        }
     }
 
     return -1;
@@ -148,8 +161,8 @@ return idx;
 
 function isStepCompleted(index: number): boolean {
     if (isInstalled.value) {
-return true;
-}
+        return true;
+    }
 
     return index <= lastCompletedIndex.value;
 }
@@ -161,12 +174,12 @@ const hasStarted = computed(() =>
 
 function isStepActive(index: number): boolean {
     if (isInstalled.value) {
-return false;
-}
+        return false;
+    }
 
     if (!hasStarted.value) {
-return false;
-}
+        return false;
+    }
 
     const nextIndex = lastCompletedIndex.value + 1;
 
@@ -179,12 +192,12 @@ const completedStepKeys = computed(
 
 const progressPercent = computed(() => {
     if (isInstalled.value) {
-return 100;
-}
+        return 100;
+    }
 
     if (isPending.value) {
-return 0;
-}
+        return 0;
+    }
 
     const done = STEP_KEYS.filter((k) => completedStepKeys.value.has(k)).length;
 
@@ -195,6 +208,18 @@ function stepTimestamp(key: string): string | null {
     const entry = props.site.install_log.find((l) => l.step === key);
 
     return entry ? formatTime(entry.timestamp) : null;
+}
+
+// ── Delete site ───────────────────────────────────────────
+const showDeleteDialog = ref(false);
+const deleteForm = useForm({});
+
+function deleteSite() {
+    deleteForm.delete(sitesDestroy(props.site.id).url, {
+        onSuccess: () => {
+            showDeleteDialog.value = false;
+        },
+    });
 }
 </script>
 
@@ -228,16 +253,58 @@ function stepTimestamp(key: string): string | null {
                         </div>
                     </div>
                 </div>
-                <Badge :variant="statusVariant(site.status)" class="mt-1">
-                    <CheckCircle2 v-if="isInstalled" class="size-3" />
-                    <Loader2
-                        v-else-if="isInstalling"
-                        class="size-3 animate-spin"
-                    />
-                    <XCircle v-else-if="isFailed" class="size-3" />
-                    <Clock v-else class="size-3" />
-                    {{ statusLabel(site.status) }}
-                </Badge>
+                <div class="flex items-center gap-2">
+                    <Badge :variant="statusVariant(site.status)" class="mt-1">
+                        <CheckCircle2 v-if="isInstalled" class="size-3" />
+                        <Loader2
+                            v-else-if="isInstalling"
+                            class="size-3 animate-spin"
+                        />
+                        <XCircle v-else-if="isFailed" class="size-3" />
+                        <Clock v-else class="size-3" />
+                        {{ statusLabel(site.status) }}
+                    </Badge>
+
+                    <Dialog v-model:open="showDeleteDialog">
+                        <DialogTrigger as-child>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="mt-1 text-muted-foreground hover:text-destructive"
+                            >
+                                <Trash2 class="size-4" />
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Delete site</DialogTitle>
+                                <DialogDescription>
+                                    Are you sure you want to delete
+                                    <strong>{{ site.domain }}</strong
+                                    >? This will remove the Docker containers,
+                                    database, and all site files. This action
+                                    cannot be undone.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                                <DialogClose as-child>
+                                    <Button variant="outline">Cancel</Button>
+                                </DialogClose>
+                                <Button
+                                    variant="destructive"
+                                    :disabled="deleteForm.processing"
+                                    @click="deleteSite"
+                                >
+                                    <Loader2
+                                        v-if="deleteForm.processing"
+                                        class="size-4 animate-spin"
+                                    />
+                                    Delete site
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             <!-- Pending / Installing: show live progress -->
