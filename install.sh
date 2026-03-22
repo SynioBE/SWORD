@@ -237,7 +237,7 @@ SQLEOF
 
 # ── Shared infra docker-compose ─────────────────────────
 
-cat > "$SWORD_DIR/shared/docker-compose.yml" <<COMPOSEEOF
+cat > "$SWORD_DIR/shared/docker-compose.yml" <<'COMPOSEEOF'
 services:
   traefik:
     image: traefik:v3
@@ -253,14 +253,14 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencrypt.acme.email=${LE_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.email=__LE_EMAIL__"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${SWORD_DIR}/letsencrypt:/letsencrypt
+      - /srv/sword/letsencrypt:/letsencrypt
     networks:
       - sword_network
 
@@ -269,10 +269,10 @@ services:
     container_name: sword_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
-      - ${SWORD_DIR}/shared/mysql/data:/var/lib/mysql
-      - ${SWORD_DIR}/shared/mysql/my.cnf:/etc/my.cnf
+      - /srv/sword/shared/mysql/data:/var/lib/mysql
+      - /srv/sword/shared/mysql/my.cnf:/etc/my.cnf
     networks:
       - sword_network
 
@@ -280,7 +280,7 @@ services:
     image: mcuadros/ofelia:latest
     container_name: sword_ofelia
     restart: unless-stopped
-    command: 'daemon --docker'
+    command: "daemon --docker"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -291,6 +291,8 @@ networks:
     name: sword_network
     external: true
 COMPOSEEOF
+
+sed -i "s|__LE_EMAIL__|${LE_EMAIL}|g" "$SWORD_DIR/shared/docker-compose.yml"
 
 # ── Start shared infra ──────────────────────────────────
 
