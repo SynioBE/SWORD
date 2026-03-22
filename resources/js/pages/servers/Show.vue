@@ -477,22 +477,20 @@ function deleteServer() {
                 </div>
                 <div class="flex items-center gap-2">
                     <Badge
-                        v-if="isProvisioned || isProvisioning"
+                        v-if="isProvisioned"
                         variant="outline"
                         class="mt-1 gap-1.5"
                     >
                         <span
                             class="size-1.5 rounded-full"
                             :class="
-                                server.is_online ||
-                                isProvisioned ||
-                                isProvisioning
+                                server.is_online
                                     ? 'bg-green-500'
                                     : 'animate-pulse bg-red-500'
                             "
                         />
                         {{
-                            server.is_online || isProvisioned || isProvisioning
+                            server.is_online
                                 ? 'Online'
                                 : 'Offline'
                         }}

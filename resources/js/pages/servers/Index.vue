@@ -359,17 +359,13 @@ function statusLabel(status: string): string {
                             <span
                                 class="size-1.5 rounded-full"
                                 :class="
-                                    server.is_online ||
-                                    server.status === 'provisioning' ||
-                                    server.status === 'provisioned'
+                                    server.is_online
                                         ? 'bg-green-500'
                                         : 'animate-pulse bg-red-500'
                                 "
                             />
                             {{
-                                server.is_online ||
-                                server.status === 'provisioning' ||
-                                server.status === 'provisioned'
+                                server.is_online
                                     ? 'Online'
                                     : 'Offline'
                             }}
