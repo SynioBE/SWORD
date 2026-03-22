@@ -1,7 +1,7 @@
 # Creating Cloud Virtual Machines with Artisan
 
-This document outlines how to use the `./vendor/bin/sail artisan cloud:vm:create` command (or similar) to provision 
-virtual machines on cloud providers like DigitalOcean and Hetzner. 
+This document outlines how to use the `./vendor/bin/sail artisan sword:<provier>:create` command (or [sword](../sword) 
+utility) to provision virtual machines on cloud providers like DigitalOcean and Hetzner. 
 
 To prevent API keys from being exposed in environment variables directly or committed to version control, 
 we use Docker Compose secrets and the `secrets/` directory.

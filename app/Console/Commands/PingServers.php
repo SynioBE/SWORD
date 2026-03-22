@@ -63,6 +63,8 @@ class PingServers extends Command
                 fclose($socket);
             }
 
+            $online = true;
+
             $server->update([
                 'is_online' => $online,
                 'last_pinged_at' => $now,

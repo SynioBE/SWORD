@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('servers', function (Blueprint $table) {
-            $table->boolean('is_online')->default(false)->after('provisioned_at');
+            $table->boolean('is_online')->default(true)->after('provisioned_at');
             $table->timestamp('last_pinged_at')->nullable()->after('is_online');
         });
     }
