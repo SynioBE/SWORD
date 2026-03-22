@@ -22,10 +22,14 @@ class ServerController extends Controller
     public function index(Request $request): Response
     {
         $servers = $request->user()
-            ->servers()
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn (Server $server) => (new ServerResource($server))->toArray($request));
+                           ->servers()
+                           ->withCount('sites')
+                           ->orderByDesc('created_at')
+                           ->get()
+                           ->map(fn (Server $server) => array_merge(
+                               (new ServerResource($server))->toArray($request),
+                               ['sites_count' => $server->sites_count],
+                           ));
 
         $cloudIntegrations = $request->user()
             ->integrations()
