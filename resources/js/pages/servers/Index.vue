@@ -359,12 +359,20 @@ function statusLabel(status: string): string {
                             <span
                                 class="size-1.5 rounded-full"
                                 :class="
-                                    server.is_online
+                                    server.is_online ||
+                                    server.status === 'provisioning' ||
+                                    server.status === 'provisioned'
                                         ? 'bg-green-500'
                                         : 'animate-pulse bg-red-500'
                                 "
                             />
-                            {{ server.is_online ? 'Online' : 'Offline' }}
+                            {{
+                                server.is_online ||
+                                server.status === 'provisioning' ||
+                                server.status === 'provisioned'
+                                    ? 'Online'
+                                    : 'Offline'
+                            }}
                         </Badge>
                         <Badge :variant="statusVariant(server.status)">
                             <CheckCircle2
