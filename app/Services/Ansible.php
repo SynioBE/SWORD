@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\Server;
+use App\Models\Site;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
 
 class Ansible
@@ -11,24 +13,46 @@ class Ansible
     public function generateInventory()
     {
         // Get all servers.
-        $servers = Server::all();
         $formattedData = [
-            'all' => [
+            'servers' => [
+                'hosts' => [],
+            ],
+            'sites' => [
                 'hosts' => [],
             ],
         ];
         // Structure the data.
 
+        $servers = Server::all();
         foreach ($servers as $server) {
-            $formattedData['all']['hosts']['server-'.$server->id.'-'.$server->name] = [
+            $formattedData['servers']['hosts']['server-'.$server->id.'-'.$server->name] = [
                 'ansible_host' => $server->ip_address,
                 'ansible_user' => 'root', // @todo make this a variable.
                 'ansible_port' => $server->ssh_port, // @todo make this a variable.
                 'ansible_ssh_private_key_file' => $this->createTempPrivateKeyFile($server),
             ];
         }
+
+        // get all sites.
+        $sites = Site::all();
+
+        foreach ($sites as $site) {
+            $formattedData['sites']['hosts']['site-'.$site->id.'-'.$site->domain] = [
+                'server_id' => $site->server_id,
+                'domain' => $site->domain,
+                'php_version' => $site->php_version,
+                'db_name' => $site->db_name,
+                'db_user' => $site->db_user,
+                'db_password' => $site->db_password,
+            ];
+        }
         // Create Yaml Inventory file.
-        $yaml = Yaml::dump($formattedData, 2);
+        $yaml = Yaml::dump(
+            $formattedData,
+            9001, //It's over 9000.
+            4,
+            Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK
+        );
         file_put_contents('/tmp/ansible-sword-inventory.yml', $yaml);
     }
 
@@ -52,27 +76,24 @@ class Ansible
     /**
      * Run a specific playbook.
      *
-     * @param  mixed  $server  The Server model, server ID, or null to run for all servers.
+     * @param  int|Server  $server  The Server model, server ID, or null to run for all servers.
      * @param  string|null  $playbookpath  Path to a playbook, relative to ./ansible-playbooks.
      *                                     Or full paths. Default to main.yml
      * @param  array<string, mixed>  $extraVars  Extra variables to pass to the playbook via --extra-vars.
      */
-    public function runPlaybook($server = null, ?string $playbookpath = null, array $extraVars = [])
+    public function runServerPlaybook( int|Server $server, ?string $playbookpath = null, array $extraVars = [])
     {
-        // Always make sure we have a fresh inventory.
-        $this->generateInventory();
 
         if (is_int($server)) {
             $server = Server::findOrFail($server);
         }
-        $LimitServer = 'all';
         if ($server) {
             $LimitServer = 'server-'.$server->id.'-'.$server->name;
         }
 
         // Ugly path handling.
         if (empty($playbookpath)) {
-            $playbookpath = __DIR__.'/../../ansible-playbooks/main.yml';
+            $playbookpath = __DIR__.'/../../ansible-playbooks/provision.yml';
         } elseif (! str_starts_with($playbookpath, '/')) {
             $playbookpath = __DIR__.'/../../ansible-playbooks/'.$playbookpath;
         }
@@ -93,6 +114,55 @@ class Ansible
             ],
             $extraVars
         );
+
+        $this->runPlaybook($playbookpath, $extraVars, $LimitServer);
+    }
+
+    public function runSitePlaybook( int|Site $site, ?string $playbookpath = null, array $extraVars = [])
+    {
+        if (is_int($site)) {
+            $site = Site::findOrFail($site);
+        }
+
+        // Ugly path handling.
+        if (empty($playbookpath)) {
+            $playbookpath = __DIR__.'/../../ansible-playbooks/create-wp.yml';
+        } elseif (! str_starts_with($playbookpath, '/')) {
+            $playbookpath = __DIR__.'/../../ansible-playbooks/'.$playbookpath;
+        }
+
+        $server = $site->server;
+
+        $extraVars = array_merge(
+            [
+                'callback_url' => route('sites.callbacks.install', [
+                    'site' => $site->id,
+                    'signature' => $site->callback_signature,
+                ]),
+                'domain' => $site->domain,
+                'site_id' => $site->id,
+                'php_version' => $site->php_version,
+                'db_name' => $site->db_name,
+                'db_user' => $site->db_user,
+                'db_password' => $site->db_password,
+                'mysql_root_password' => $server->mysql_root_password,
+                // @todo these should be stored in the Job, and not generated here.
+                'wp_admin_user' => $site->user->name ?? 'admin',
+                'wp_admin_password' => Str::random(16), // @todo Get from the job.
+                'admin_email' => $site->user->email ?? 'admin@'.$site->domain,
+                'admin_display_name' => $site->user->name ?? null,
+            ],
+            $extraVars
+        );
+
+        return $this->runPlaybook( $playbookpath, $extraVars);
+
+    }
+
+    public function runPlaybook( string $playbookpath, array $extraVars = [], string $LimitServer = 'all')
+    {
+        // Always make sure we have a fresh inventory.
+        $this->generateInventory();
 
         $command = 'ANSIBLE_HOST_KEY_CHECKING=false ';
         $command .= 'ansible-playbook';

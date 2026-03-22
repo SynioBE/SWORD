@@ -30,7 +30,7 @@ class RunAnsible implements ShouldQueue
         }
 
         $ansible = new Ansible;
-        $ansible->runPlaybook($this->serverID, 'provision.yml');
+        $ansible->runServerPlaybook($this->serverID, 'provision.yml');
 
         // $this->testRawSSHConnection($this->serverID);
     }
