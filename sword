@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<EOF
+Usage: sword <command>
+
+Commands:
+  up                     Start Docker containers in detached mode (sail up -d)
+  down                   Stop Docker containers (sail down)
+  digitalocean:create    Run the DigitalOcean server creation artisan command (sail artisan sword:digitalocean:create)
+  hetzner:create         Run the Hetzner server creation artisan command (sail artisan sword:hetzner:create)
+  help                   Show this help message
+EOF
+}
+
+# --- Command Implementations ---
+
+cmd_up() {
+    echo "Starting Docker containers..."
+    ./vendor/bin/sail up -d
+    echo "Docker containers started."
+}
+
+cmd_down() {
+    echo "Stopping Docker containers..."
+    ./vendor/bin/sail down
+    echo "Docker containers stopped."
+}
+
+cmd_digitalocean_create() {
+    echo "Running DigitalOcean server creation..."
+    ./vendor/bin/sail artisan sword:digitalocean:create
+    echo "DigitalOcean server creation command completed."
+}
+
+cmd_hetzner_create() {
+    echo "Running Hetzner server creation..."
+    ./vendor/bin/sail artisan sword:hetzner:create
+    echo "Hetzner server creation command completed."
+}
+
+# --- Main Logic ---
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        usage
+        exit 0
+    fi
+
+    local command="$1"
+    shift # Remove the command from the arguments list
+
+    case "$command" in
+        up)
+            cmd_up "$@"
+            ;;
+        down)
+            cmd_down "$@"
+            ;;
+        digitalocean:create)
+            cmd_digitalocean_create "$@"
+            ;;
+        hetzner:create)
+            cmd_hetzner_create "$@"
+            ;;
+        help)
+            usage
+            ;;
+        *)
+            die "Unknown command: '$command'. Use 'sword help' for usage."
+            ;;
+    esac
+}
+
+main "$@"
