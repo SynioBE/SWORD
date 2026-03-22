@@ -1,0 +1,466 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================
+# SWORD Self-Hosted Installer
+# Usage: curl -sL <url> | bash
+# ============================================================
+
+REPO="https://github.com/SynioBE/SWORD.git"
+SWORD_DIR="/srv/sword"
+
+# ── Colors ──────────────────────────────────────────────
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+info()  { echo -e "${CYAN}[SWORD]${NC} $1"; }
+ok()    { echo -e "${GREEN}[SWORD]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[SWORD]${NC} $1"; }
+fail()  { echo -e "${RED}[SWORD]${NC} $1"; exit 1; }
+
+# ── Root & OS check ────────────────────────────────────
+
+if [ "$(id -u)" -ne 0 ]; then
+    fail "This script must be run as root."
+fi
+
+if [ ! -f /etc/os-release ]; then
+    fail "Cannot detect OS. /etc/os-release not found."
+fi
+
+. /etc/os-release
+if [ "$ID" != "ubuntu" ] || [ "$VERSION_ID" != "24.04" ]; then
+    fail "This installer requires Ubuntu 24.04. Detected: $ID $VERSION_ID"
+fi
+
+# ── Prompts ─────────────────────────────────────────────
+
+echo ""
+echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║        SWORD Installer               ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
+echo ""
+
+read -rp "Domain for SWORD (e.g. sword.example.com): " SWORD_DOMAIN
+[ -z "$SWORD_DOMAIN" ] && fail "Domain is required."
+
+read -rp "Email for Let's Encrypt certificates: " LE_EMAIL
+[ -z "$LE_EMAIL" ] && fail "Email is required."
+
+read -rp "Admin name: " ADMIN_NAME
+[ -z "$ADMIN_NAME" ] && fail "Admin name is required."
+
+read -rp "Admin email: " ADMIN_EMAIL
+[ -z "$ADMIN_EMAIL" ] && fail "Admin email is required."
+
+read -srp "Admin password: " ADMIN_PASSWORD
+echo ""
+[ -z "$ADMIN_PASSWORD" ] && fail "Admin password is required."
+
+info "Starting installation..."
+
+# ── Detect public IP ───────────────────────────────────
+
+SERVER_IP=$(curl -s4 https://ifconfig.me || curl -s4 https://api.ipify.org || hostname -I | awk '{print $1}')
+info "Detected public IP: $SERVER_IP"
+
+# ── Apt helpers ─────────────────────────────────────────
+
+export DEBIAN_FRONTEND=noninteractive
+
+waitForApt() {
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done
+    while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 2; done
+}
+
+# ── Install Docker ──────────────────────────────────────
+
+if ! command -v docker >/dev/null 2>&1; then
+    info "Installing Docker..."
+
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+    waitForApt
+    apt-get update
+
+    waitForApt
+    apt-get install -y -qq \
+        docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin
+
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json <<'DOCKEREOF'
+{
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "50m",
+        "max-file": "3"
+    },
+    "live-restore": true,
+    "default-address-pools": [
+      {
+        "base": "10.240.0.0/16",
+        "size": 24
+      }
+    ]
+}
+DOCKEREOF
+
+    systemctl enable --now docker
+    ok "Docker installed."
+else
+    ok "Docker already installed."
+fi
+
+# ── Install git if missing ──────────────────────────────
+
+if ! command -v git >/dev/null 2>&1; then
+    waitForApt
+    apt-get install -y -qq git
+fi
+
+# ── Create sword user ──────────────────────────────────
+
+info "Setting up sword user..."
+
+SUDO_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+
+if ! id sword &>/dev/null; then
+    useradd -m -s /bin/bash sword
+fi
+
+groupadd -f docker
+usermod -aG docker sword
+usermod -aG sudo sword
+
+echo "sword:${SUDO_PASSWORD}" | chpasswd
+
+# Generate SSH keypair for sword user
+mkdir -p /home/sword/.ssh
+chmod 700 /home/sword/.ssh
+
+if [ ! -f /home/sword/.ssh/id_ed25519 ]; then
+    ssh-keygen -t ed25519 -f /home/sword/.ssh/id_ed25519 -N "" -C "sword-localhost"
+fi
+
+# Authorize sword's public key in root's authorized_keys
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+
+SWORD_PUBKEY=$(cat /home/sword/.ssh/id_ed25519.pub)
+if ! grep -qF "${SWORD_PUBKEY}" /root/.ssh/authorized_keys; then
+    echo "${SWORD_PUBKEY}" >> /root/.ssh/authorized_keys
+fi
+
+chown -R sword:sword /home/sword/.ssh
+
+# Add host key to known_hosts so SSH doesn't prompt
+ssh-keyscan -H "$SERVER_IP" >> /home/sword/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H localhost >> /home/sword/.ssh/known_hosts 2>/dev/null || true
+chown sword:sword /home/sword/.ssh/known_hosts
+
+ok "sword user ready."
+
+# ── Directory structure ─────────────────────────────────
+
+info "Creating directory structure..."
+
+mkdir -p "$SWORD_DIR"/{shared/mysql/data,app/storage,sites,stacks,letsencrypt}
+
+# ── Docker network ──────────────────────────────────────
+
+if ! docker network ls -q -f name=^sword_network$ | grep -q .; then
+    docker network create sword_network
+fi
+
+# ── Generate secrets ────────────────────────────────────
+
+APP_KEY="base64:$(openssl rand -base64 32)"
+DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+MYSQL_ROOT_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+
+# ── Shared infra .env ──────────────────────────────────
+
+cat > "$SWORD_DIR/shared/.env" <<EOF
+MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+EOF
+
+# ── MySQL config ────────────────────────────────────────
+
+cat > "$SWORD_DIR/shared/mysql/my.cnf" <<'SQLEOF'
+[mysqld]
+user=mysql
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+
+innodb_buffer_pool_size=1G
+innodb_buffer_pool_instances=1
+innodb_log_file_size=256M
+innodb_flush_log_at_trx_commit=1
+innodb_file_per_table=1
+innodb_flush_method=O_DIRECT
+
+max_connections=150
+thread_cache_size=50
+max_allowed_packet=64M
+wait_timeout=60
+interactive_timeout=60
+
+table_open_cache=2000
+tmp_table_size=64M
+max_heap_table_size=64M
+
+host_cache_size=0
+skip-name-resolve
+skip-log-bin
+
+[mysql]
+default-character-set=utf8mb4
+
+[client]
+default-character-set=utf8mb4
+SQLEOF
+
+# ── Shared infra docker-compose ─────────────────────────
+
+cat > "$SWORD_DIR/shared/docker-compose.yml" <<COMPOSEEOF
+services:
+  traefik:
+    image: traefik:v3
+    container_name: sword_traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${LE_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${SWORD_DIR}/letsencrypt:/letsencrypt
+    networks:
+      - sword_network
+
+  mysql:
+    image: mysql:8.4
+    container_name: sword_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ${SWORD_DIR}/shared/mysql/data:/var/lib/mysql
+      - ${SWORD_DIR}/shared/mysql/my.cnf:/etc/my.cnf
+    networks:
+      - sword_network
+
+  ofelia:
+    image: mcuadros/ofelia:latest
+    container_name: sword_ofelia
+    restart: unless-stopped
+    command: 'daemon --docker'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - sword_network
+
+networks:
+  sword_network:
+    name: sword_network
+    external: true
+COMPOSEEOF
+
+# ── Start shared infra ──────────────────────────────────
+
+info "Starting shared infrastructure..."
+docker compose -f "$SWORD_DIR/shared/docker-compose.yml" up -d
+
+# Wait for MySQL to be ready
+info "Waiting for MySQL to be ready..."
+for i in $(seq 1 60); do
+    if docker exec sword_mysql mysqladmin ping -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+        break
+    fi
+    sleep 2
+done
+
+# Verify MySQL is actually ready
+if ! docker exec sword_mysql mysqladmin ping -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+    fail "MySQL failed to start within 120 seconds."
+fi
+
+ok "MySQL is ready."
+
+# ── Create SWORD database and user ──────────────────────
+
+info "Creating SWORD database..."
+docker exec sword_mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "
+    CREATE DATABASE IF NOT EXISTS sword CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE USER IF NOT EXISTS 'sword'@'%' IDENTIFIED BY '${DB_PASSWORD}';
+    GRANT ALL PRIVILEGES ON sword.* TO 'sword'@'%';
+    FLUSH PRIVILEGES;
+"
+
+ok "Database ready."
+
+# ── Write SWORD .env ────────────────────────────────────
+
+cat > "$SWORD_DIR/app/.env" <<EOF
+APP_NAME=SWORD
+APP_ENV=production
+APP_KEY=${APP_KEY}
+APP_DEBUG=false
+APP_URL=https://${SWORD_DOMAIN}
+
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+APP_FAKER_LOCALE=en_US
+APP_MAINTENANCE_DRIVER=file
+
+BCRYPT_ROUNDS=12
+
+LOG_CHANNEL=stack
+LOG_STACK=single
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=warning
+
+DB_CONNECTION=mysql
+DB_HOST=sword_mysql
+DB_PORT=3306
+DB_DATABASE=sword
+DB_USERNAME=sword
+DB_PASSWORD=${DB_PASSWORD}
+
+SESSION_DRIVER=database
+SESSION_LIFETIME=120
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=null
+
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=redis
+
+CACHE_STORE=redis
+
+REDIS_CLIENT=phpredis
+REDIS_HOST=sword_redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+MAIL_MAILER=log
+
+SWORD_DOMAIN=${SWORD_DOMAIN}
+EOF
+
+# ── Clone repo and build image ──────────────────────────
+
+info "Cloning SWORD repository..."
+CLONE_DIR=$(mktemp -d)
+git clone --depth 1 "$REPO" "$CLONE_DIR"
+
+info "Building SWORD Docker image (this may take a few minutes)..."
+docker build -t sword-app:latest -f "$CLONE_DIR/docker/production/Dockerfile" "$CLONE_DIR"
+
+# Copy the compose file
+cp "$CLONE_DIR/docker/production/docker-compose.prod.yml" "$SWORD_DIR/app/docker-compose.prod.yml"
+
+rm -rf "$CLONE_DIR"
+
+ok "Docker image built."
+
+# ── Initialize storage ──────────────────────────────────
+
+info "Initializing storage directories..."
+
+mkdir -p "$SWORD_DIR/app/storage"/{app/public,framework/{cache/data,sessions,views},logs}
+chown -R 33:33 "$SWORD_DIR/app/storage"
+
+# ── Start SWORD ─────────────────────────────────────────
+
+info "Starting SWORD application..."
+SWORD_DOMAIN="$SWORD_DOMAIN" docker compose -f "$SWORD_DIR/app/docker-compose.prod.yml" up -d
+
+# Wait for the app container to be running
+sleep 5
+
+# ── Run migrations ──────────────────────────────────────
+
+info "Running database migrations..."
+docker exec sword_app php artisan migrate --force
+
+# ── Run sword:init ──────────────────────────────────────
+
+info "Initializing SWORD..."
+docker exec sword_app php artisan sword:init \
+    --admin-name="$ADMIN_NAME" \
+    --admin-email="$ADMIN_EMAIL" \
+    --admin-password="$ADMIN_PASSWORD" \
+    --server-ip="$SERVER_IP" \
+    --mysql-root-password="$MYSQL_ROOT_PASSWORD" \
+    --sudo-password="$SUDO_PASSWORD"
+
+# ── Firewall ────────────────────────────────────────────
+
+info "Configuring firewall..."
+
+if command -v ufw >/dev/null 2>&1; then
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow 22/tcp comment "SSH"
+    ufw allow 80/tcp comment "HTTP"
+    ufw allow 443/tcp comment "HTTPS"
+    ufw --force enable
+    ok "Firewall configured."
+else
+    waitForApt
+    apt-get install -y -qq ufw
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow 22/tcp comment "SSH"
+    ufw allow 80/tcp comment "HTTP"
+    ufw allow 443/tcp comment "HTTPS"
+    ufw --force enable
+    ok "Firewall configured."
+fi
+
+# ── Done ────────────────────────────────────────────────
+
+echo ""
+echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║            SWORD Installation Complete!              ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  URL:      ${CYAN}https://${SWORD_DOMAIN}${NC}"
+echo -e "  Email:    ${CYAN}${ADMIN_EMAIL}${NC}"
+echo -e "  Server:   ${CYAN}${SERVER_IP}${NC}"
+echo ""
+echo -e "  ${YELLOW}Credentials have been saved to:${NC}"
+echo -e "  ${CYAN}${SWORD_DIR}/app/.env${NC}"
+echo -e "  ${CYAN}${SWORD_DIR}/shared/.env${NC}"
+echo ""
+echo -e "  ${YELLOW}Please save your admin password — it is not stored in plaintext.${NC}"
+echo ""

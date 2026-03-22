@@ -1,0 +1,28 @@
+services:
+  app:
+    image: sword-app:latest
+    container_name: sword_app
+    restart: unless-stopped
+    env_file: /srv/sword/app/.env
+    volumes:
+      - /srv/sword/app/storage:/var/www/html/storage
+    networks:
+      - sword_network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sword.rule=Host(`${SWORD_DOMAIN}`)
+      - traefik.http.routers.sword.entrypoints=websecure
+      - traefik.http.routers.sword.tls.certresolver=letsencrypt
+      - traefik.http.services.sword.loadbalancer.server.port=8080
+
+  redis:
+    image: redis:alpine
+    container_name: sword_redis
+    restart: unless-stopped
+    networks:
+      - sword_network
+
+networks:
+  sword_network:
+    name: sword_network
+    external: true
