@@ -19,6 +19,7 @@ services:
     image: redis:alpine
     container_name: sword_redis
     restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     networks:
       - sword_network
 

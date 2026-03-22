@@ -8,52 +8,60 @@ use Illuminate\Console\Command;
 
 class SwordInit extends Command
 {
-    protected $signature = 'sword:init
-        {--admin-name= : Admin user name}
-        {--admin-email= : Admin user email}
-        {--admin-password= : Admin user password}
-        {--server-ip= : Public IP address of this server}
-        {--mysql-root-password= : MySQL root password}
-        {--sudo-password= : Sudo password for the sword user}
-        {--ssh-private-key= : SSH private key contents}
-        {--ssh-public-key= : SSH public key contents}';
+    protected $signature = 'sword:init {config-file : Path to JSON config file with init parameters}';
 
     protected $description = 'Initialize SWORD with an admin user and localhost server';
 
     public function handle(): int
     {
+        $configPath = $this->argument('config-file');
+
+        if (! file_exists($configPath)) {
+            $this->error("Config file not found: {$configPath}");
+
+            return self::FAILURE;
+        }
+
+        $config = json_decode(file_get_contents($configPath), true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->error('Invalid JSON in config file: '.json_last_error_msg());
+
+            return self::FAILURE;
+        }
+
+        $required = ['admin_name', 'admin_email', 'admin_password', 'server_ip', 'mysql_root_password', 'sudo_password', 'ssh_private_key', 'ssh_public_key'];
+        foreach ($required as $key) {
+            if (empty($config[$key])) {
+                $this->error("Missing required config key: {$key}");
+
+                return self::FAILURE;
+            }
+        }
+
         $user = User::firstOrCreate(
-            ['email' => $this->option('admin-email')],
+            ['email' => $config['admin_email']],
             [
-                'name' => $this->option('admin-name'),
-                'password' => $this->option('admin-password'),
+                'name' => $config['admin_name'],
+                'password' => $config['admin_password'],
             ],
         );
 
         $this->info("Admin user ready: {$user->email}");
-
-        $privateKey = $this->option('ssh-private-key');
-        $publicKey = $this->option('ssh-public-key');
-
-        if (empty($privateKey) || empty($publicKey)) {
-            $this->error('SSH keys are required. Pass --ssh-private-key and --ssh-public-key.');
-
-            return self::FAILURE;
-        }
 
         $server = Server::firstOrCreate(
             ['provider' => 'localhost'],
             [
                 'user_id' => $user->id,
                 'name' => 'Localhost',
-                'ip_address' => $this->option('server-ip'),
+                'ip_address' => $config['server_ip'],
                 'hostname' => gethostname(),
                 'timezone' => date_default_timezone_get(),
                 'ssh_port' => 22,
-                'ssh_private_key' => $privateKey,
-                'ssh_public_key' => $publicKey,
-                'mysql_root_password' => $this->option('mysql-root-password'),
-                'sudo_password' => $this->option('sudo-password'),
+                'ssh_private_key' => $config['ssh_private_key'],
+                'ssh_public_key' => $config['ssh_public_key'],
+                'mysql_root_password' => $config['mysql_root_password'],
+                'sudo_password' => $config['sudo_password'],
                 'status' => 'provisioned',
                 'provisioned_at' => now(),
                 'is_online' => true,

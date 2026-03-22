@@ -9,6 +9,7 @@ set -euo pipefail
 REPO="https://github.com/SynioBE/SWORD.git"
 BRANCH="${SWORD_BRANCH:-main}"
 SWORD_DIR="/srv/sword"
+CLONE_DIR=""
 
 # ── Colors ──────────────────────────────────────────────
 
@@ -22,6 +23,17 @@ info()  { echo -e "${CYAN}[SWORD]${NC} $1"; }
 ok()    { echo -e "${GREEN}[SWORD]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[SWORD]${NC} $1"; }
 fail()  { echo -e "${RED}[SWORD]${NC} $1"; exit 1; }
+
+# ── Cleanup trap ────────────────────────────────────────
+
+cleanup() {
+    if [ -n "$CLONE_DIR" ] && [ -d "$CLONE_DIR" ]; then
+        rm -rf "$CLONE_DIR"
+    fi
+    # Remove secrets temp file if it exists
+    rm -f /tmp/sword-init-config.json 2>/dev/null || true
+}
+trap cleanup EXIT
 
 # ── Root & OS check ────────────────────────────────────
 
@@ -49,8 +61,18 @@ echo ""
 read -rp "Domain for SWORD (e.g. sword.example.com): " SWORD_DOMAIN < /dev/tty
 [ -z "$SWORD_DOMAIN" ] && fail "Domain is required."
 
+# Validate domain format
+if ! echo "$SWORD_DOMAIN" | grep -qP '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$'; then
+    fail "Invalid domain format: $SWORD_DOMAIN"
+fi
+
 read -rp "Email for Let's Encrypt certificates: " LE_EMAIL < /dev/tty
 [ -z "$LE_EMAIL" ] && fail "Email is required."
+
+# Validate email format
+if ! echo "$LE_EMAIL" | grep -qP '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
+    fail "Invalid email format: $LE_EMAIL"
+fi
 
 read -rp "Admin name: " ADMIN_NAME < /dev/tty
 [ -z "$ADMIN_NAME" ] && fail "Admin name is required."
@@ -58,15 +80,32 @@ read -rp "Admin name: " ADMIN_NAME < /dev/tty
 read -rp "Admin email: " ADMIN_EMAIL < /dev/tty
 [ -z "$ADMIN_EMAIL" ] && fail "Admin email is required."
 
-read -srp "Admin password: " ADMIN_PASSWORD < /dev/tty
+if ! echo "$ADMIN_EMAIL" | grep -qP '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
+    fail "Invalid email format: $ADMIN_EMAIL"
+fi
+
+read -srp "Admin password (min 8 characters): " ADMIN_PASSWORD < /dev/tty
 echo ""
 [ -z "$ADMIN_PASSWORD" ] && fail "Admin password is required."
+[ ${#ADMIN_PASSWORD} -lt 8 ] && fail "Admin password must be at least 8 characters."
 
 info "Starting installation..."
 
 # ── Detect public IP ───────────────────────────────────
 
-SERVER_IP=$(curl -s4 https://ifconfig.me || curl -s4 https://api.ipify.org || hostname -I | awk '{print $1}')
+SERVER_IP=$(curl -s4 https://ifconfig.me || curl -s4 https://api.ipify.org || true)
+
+# Validate we got a public IP (not empty, not private range)
+if [ -z "$SERVER_IP" ]; then
+    fail "Could not detect public IP address. Check your network connection."
+fi
+
+if echo "$SERVER_IP" | grep -qP '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)'; then
+    warn "Detected IP $SERVER_IP appears to be a private address."
+    read -rp "Enter the public IP of this server: " SERVER_IP < /dev/tty
+    [ -z "$SERVER_IP" ] && fail "Public IP is required."
+fi
+
 info "Detected public IP: $SERVER_IP"
 
 # ── Apt helpers ─────────────────────────────────────────
@@ -192,12 +231,14 @@ fi
 APP_KEY="base64:$(openssl rand -base64 32)"
 DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
 MYSQL_ROOT_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+REDIS_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
 # ── Shared infra .env ──────────────────────────────────
 
 cat > "$SWORD_DIR/shared/.env" <<EOF
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
 EOF
+chmod 600 "$SWORD_DIR/shared/.env"
 
 # ── MySQL config ────────────────────────────────────────
 
@@ -255,6 +296,7 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencrypt.acme.email=__LE_EMAIL__"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--api.dashboard=false"
     ports:
       - "80:80"
       - "443:443"
@@ -277,7 +319,7 @@ services:
       - sword_network
 
   ofelia:
-    image: mcuadros/ofelia:latest
+    image: mcuadros/ofelia:v3.3.3
     container_name: sword_ofelia
     restart: unless-stopped
     command: "daemon --docker"
@@ -321,12 +363,20 @@ ok "MySQL is ready."
 # ── Create SWORD database and user ──────────────────────
 
 info "Creating SWORD database..."
-docker exec sword_mysql sh -c "mysql -uroot -p\"\${MYSQL_ROOT_PASSWORD}\" -e \"
-    CREATE DATABASE IF NOT EXISTS sword CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    CREATE USER IF NOT EXISTS 'sword'@'%' IDENTIFIED BY '${DB_PASSWORD}';
-    GRANT ALL PRIVILEGES ON sword.* TO 'sword'@'%';
-    FLUSH PRIVILEGES;
-\""
+
+# Write SQL to a temp file inside the container to avoid secrets in process args
+docker exec sword_mysql sh -c "cat > /tmp/init.sql <<'INITSQL'
+CREATE DATABASE IF NOT EXISTS sword CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+INITSQL
+"
+
+# The DB_PASSWORD needs interpolation, so we write it separately
+docker exec sword_mysql sh -c "echo \"CREATE USER IF NOT EXISTS 'sword'@'%' IDENTIFIED BY '${DB_PASSWORD}';\" >> /tmp/init.sql"
+docker exec sword_mysql sh -c "echo \"GRANT ALL PRIVILEGES ON sword.* TO 'sword'@'%';\" >> /tmp/init.sql"
+docker exec sword_mysql sh -c "echo 'FLUSH PRIVILEGES;' >> /tmp/init.sql"
+
+docker exec sword_mysql sh -c 'mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" < /tmp/init.sql'
+docker exec sword_mysql rm -f /tmp/init.sql
 
 ok "Database ready."
 
@@ -372,7 +422,7 @@ CACHE_STORE=redis
 
 REDIS_CLIENT=phpredis
 REDIS_HOST=sword_redis
-REDIS_PASSWORD=null
+REDIS_PASSWORD=${REDIS_PASSWORD}
 REDIS_PORT=6379
 
 MAIL_MAILER=log
@@ -381,11 +431,13 @@ TRUSTED_PROXIES=*
 
 SWORD_DOMAIN=${SWORD_DOMAIN}
 EOF
+chmod 600 "$SWORD_DIR/app/.env"
 
 # ── Clone repo and build image ──────────────────────────
 
 info "Cloning SWORD repository..."
 CLONE_DIR=$(mktemp -d)
+chmod 700 "$CLONE_DIR"
 git clone --depth 1 --branch "$BRANCH" "$REPO" "$CLONE_DIR"
 
 info "Building SWORD Docker image (this may take a few minutes)..."
@@ -394,7 +446,15 @@ docker build -t sword-app:latest -f "$CLONE_DIR/docker/production/Dockerfile" "$
 # Copy the compose file
 cp "$CLONE_DIR/docker/production/docker-compose.prod.yml" "$SWORD_DIR/app/docker-compose.prod.yml"
 
+# Write .env for Docker Compose variable interpolation (SWORD_DOMAIN, REDIS_PASSWORD)
+cat > "$SWORD_DIR/app/docker-compose.env" <<EOF
+SWORD_DOMAIN=${SWORD_DOMAIN}
+REDIS_PASSWORD=${REDIS_PASSWORD}
+EOF
+chmod 600 "$SWORD_DIR/app/docker-compose.env"
+
 rm -rf "$CLONE_DIR"
+CLONE_DIR=""
 
 ok "Docker image built."
 
@@ -408,7 +468,7 @@ chown -R 33:33 "$SWORD_DIR/app/storage"
 # ── Start SWORD ─────────────────────────────────────────
 
 info "Starting SWORD application..."
-SWORD_DOMAIN="$SWORD_DOMAIN" docker compose -f "$SWORD_DIR/app/docker-compose.prod.yml" up -d
+docker compose --env-file "$SWORD_DIR/app/docker-compose.env" -f "$SWORD_DIR/app/docker-compose.prod.yml" up -d
 
 # Wait for the app container to be running
 sleep 5
@@ -421,43 +481,46 @@ docker exec sword_app php artisan migrate --force
 # ── Run sword:init ──────────────────────────────────────
 
 info "Initializing SWORD..."
-SSH_PRIVATE_KEY=$(cat /home/sword/.ssh/id_ed25519)
-SSH_PUBLIC_KEY=$(cat /home/sword/.ssh/id_ed25519.pub)
-docker exec sword_app php artisan sword:init \
-    --admin-name="$ADMIN_NAME" \
-    --admin-email="$ADMIN_EMAIL" \
-    --admin-password="$ADMIN_PASSWORD" \
-    --server-ip="$SERVER_IP" \
-    --mysql-root-password="$MYSQL_ROOT_PASSWORD" \
-    --sudo-password="$SUDO_PASSWORD" \
-    --ssh-private-key="$SSH_PRIVATE_KEY" \
-    --ssh-public-key="$SSH_PUBLIC_KEY"
+
+# Write secrets to a temp file (not CLI args) to avoid process list exposure
+INIT_CONFIG=$(mktemp)
+chmod 600 "$INIT_CONFIG"
+cat > "$INIT_CONFIG" <<INITEOF
+{
+    "admin_name": $(printf '%s' "$ADMIN_NAME" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "admin_email": $(printf '%s' "$ADMIN_EMAIL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "admin_password": $(printf '%s' "$ADMIN_PASSWORD" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "server_ip": $(printf '%s' "$SERVER_IP" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "mysql_root_password": $(printf '%s' "$MYSQL_ROOT_PASSWORD" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "sudo_password": $(printf '%s' "$SUDO_PASSWORD" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+    "ssh_private_key": $(python3 -c "import sys,json; print(json.dumps(open('/home/sword/.ssh/id_ed25519').read()))"),
+    "ssh_public_key": $(python3 -c "import sys,json; print(json.dumps(open('/home/sword/.ssh/id_ed25519.pub').read()))")
+}
+INITEOF
+
+# Copy config file into container, run init, then remove it
+docker cp "$INIT_CONFIG" sword_app:/tmp/sword-init-config.json
+rm -f "$INIT_CONFIG"
+docker exec sword_app php artisan sword:init /tmp/sword-init-config.json
+docker exec sword_app rm -f /tmp/sword-init-config.json
 
 # ── Firewall ────────────────────────────────────────────
 
 info "Configuring firewall..."
 
-if command -v ufw >/dev/null 2>&1; then
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow 22/tcp comment "SSH"
-    ufw allow 80/tcp comment "HTTP"
-    ufw allow 443/tcp comment "HTTPS"
-    ufw --force enable
-    ok "Firewall configured."
-else
+if ! command -v ufw >/dev/null 2>&1; then
     waitForApt
     apt-get install -y -qq ufw
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow 22/tcp comment "SSH"
-    ufw allow 80/tcp comment "HTTP"
-    ufw allow 443/tcp comment "HTTPS"
-    ufw --force enable
-    ok "Firewall configured."
 fi
+
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp comment "SSH"
+ufw allow 80/tcp comment "HTTP"
+ufw allow 443/tcp comment "HTTPS"
+ufw --force enable
+ok "Firewall configured."
 
 # ── Done ────────────────────────────────────────────────
 
@@ -470,9 +533,13 @@ echo -e "  URL:      ${CYAN}https://${SWORD_DOMAIN}${NC}"
 echo -e "  Email:    ${CYAN}${ADMIN_EMAIL}${NC}"
 echo -e "  Server:   ${CYAN}${SERVER_IP}${NC}"
 echo ""
-echo -e "  ${YELLOW}Credentials have been saved to:${NC}"
+echo -e "  ${YELLOW}Sudo password for 'sword' user:${NC}"
+echo -e "  ${CYAN}${SUDO_PASSWORD}${NC}"
+echo ""
+echo -e "  ${YELLOW}Credentials saved to:${NC}"
 echo -e "  ${CYAN}${SWORD_DIR}/app/.env${NC}"
 echo -e "  ${CYAN}${SWORD_DIR}/shared/.env${NC}"
 echo ""
-echo -e "  ${YELLOW}Please save your admin password — it is not stored in plaintext.${NC}"
+echo -e "  ${RED}Save the sudo password above — it is not stored elsewhere.${NC}"
+echo -e "  ${YELLOW}Please also save your admin password — it is not stored in plaintext.${NC}"
 echo ""
