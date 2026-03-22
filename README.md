@@ -10,6 +10,8 @@ infrastructure.
 
 ![General schema](docs/schema.png)
 
+You can find more details in the [docs](docs) folder.
+
 ## How to run this project
 
 After cloning the repository and moving into the project directory, you can use the automated script or run the commands
