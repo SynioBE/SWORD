@@ -13,12 +13,15 @@ use phpseclib3\Crypt\EC;
 
 #[Fillable([
     'user_id',
+    'integration_id',
     'name',
     'ip_address',
     'hostname',
     'timezone',
     'region',
     'provider',
+    'server_type',
+    'image',
     'ssh_port',
     'sudo_password',
     'mysql_root_password',
@@ -67,7 +70,7 @@ class Server extends Model
             if (empty($server->ssh_private_key)) {
                 $privateKey = EC::createKey('Ed25519');
                 $server->ssh_private_key = $privateKey->toString('OpenSSH');
-                $server->ssh_public_key = $privateKey->getPublicKey()->toString('OpenSSH', ['comment' => 'sword']);
+                $server->ssh_public_key = $privateKey->getPublicKey()->toString('OpenSSH', ['comment' => 'sword-'.Str::random(8)]);
             }
 
             if (empty($server->sudo_password)) {
@@ -83,6 +86,11 @@ class Server extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function integration(): BelongsTo
+    {
+        return $this->belongsTo(Integration::class);
     }
 
     /** @return HasMany<Site, $this> */

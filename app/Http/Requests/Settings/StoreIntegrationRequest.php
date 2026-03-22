@@ -16,7 +16,7 @@ class StoreIntegrationRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'provider' => ['required', 'string', 'in:cloudflare'],
+            'provider' => ['required', 'string', 'in:cloudflare,digital_ocean,hetzner'],
             'type' => ['required', 'string', 'in:api_token,global_key'],
             'token' => ['nullable', 'string', 'required_if:type,api_token', 'max:512'],
             'email' => ['nullable', 'string', 'email', 'required_if:type,global_key', 'max:255'],

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, Cloud } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +58,14 @@ interface IntegrationRow {
 
 const PROVIDER_LABELS: Record<string, string> = {
     cloudflare: 'Cloudflare',
+    digital_ocean: 'Digital Ocean',
+    hetzner: 'Hetzner',
+};
+
+const PROVIDER_AUTH_TYPES: Record<string, string[]> = {
+    cloudflare: ['api_token', 'global_key'],
+    digital_ocean: ['api_token'],
+    hetzner: ['api_token'],
 };
 
 defineProps<{
@@ -79,6 +87,18 @@ const addForm = useForm({
     token: '',
     email: '',
     key: '',
+});
+
+watch(() => addForm.provider, (provider) => {
+    const authTypes = PROVIDER_AUTH_TYPES[provider] ?? ['api_token'];
+    if (!authTypes.includes(addForm.type)) {
+        addForm.type = authTypes[0] as 'api_token' | 'global_key';
+    }
+});
+
+const showAddAuthTypeSelect = computed(() => {
+    const authTypes = PROVIDER_AUTH_TYPES[addForm.provider] ?? ['api_token'];
+    return authTypes.length > 1;
 });
 
 function openAdd(): void {
@@ -160,6 +180,14 @@ function credentialSummary(creds: MaskedCredentials): string {
     if (creds.type === 'api_token') return 'API Token';
     return `Global Key · ${creds.email ?? ''}`;
 }
+
+const PROVIDER_TOKEN_PLACEHOLDERS: Record<string, string> = {
+    cloudflare: 'Cloudflare API Token',
+    digital_ocean: 'Digital Ocean API Token',
+    hetzner: 'Hetzner API Token',
+};
+
+const addTokenPlaceholder = computed(() => PROVIDER_TOKEN_PLACEHOLDERS[addForm.provider] ?? 'API Token');
 
 const credentialFieldsVisible = computed(() => ({
     token: addForm.type === 'api_token',
@@ -288,12 +316,14 @@ const editCredentialFieldsVisible = computed(() => ({
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="cloudflare">Cloudflare</SelectItem>
+                                    <SelectItem value="digital_ocean">Digital Ocean</SelectItem>
+                                    <SelectItem value="hetzner">Hetzner</SelectItem>
                                 </SelectContent>
                             </Select>
                             <InputError :message="addForm.errors.provider" />
                         </div>
 
-                        <div class="grid gap-2">
+                        <div v-if="showAddAuthTypeSelect" class="grid gap-2">
                             <Label for="add-type">Authentication type</Label>
                             <Select v-model="addForm.type" name="type">
                                 <SelectTrigger id="add-type">
@@ -314,7 +344,7 @@ const editCredentialFieldsVisible = computed(() => ({
                                     id="add-token"
                                     v-model="addForm.token"
                                     type="password"
-                                    placeholder="Cloudflare API Token"
+                                    :placeholder="addTokenPlaceholder"
                                     autocomplete="off"
                                 />
                                 <InputError :message="addForm.errors.token" />
