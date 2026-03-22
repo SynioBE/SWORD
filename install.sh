@@ -7,6 +7,7 @@ set -euo pipefail
 # ============================================================
 
 REPO="https://github.com/SynioBE/SWORD.git"
+BRANCH="main"
 SWORD_DIR="/srv/sword"
 
 # ── Colors ──────────────────────────────────────────────
@@ -378,7 +379,7 @@ EOF
 
 info "Cloning SWORD repository..."
 CLONE_DIR=$(mktemp -d)
-git clone --depth 1 "$REPO" "$CLONE_DIR"
+git clone --depth 1 --branch "$BRANCH" "$REPO" "$CLONE_DIR"
 
 info "Building SWORD Docker image (this may take a few minutes)..."
 docker build -t sword-app:latest -f "$CLONE_DIR/docker/production/Dockerfile" "$CLONE_DIR"
