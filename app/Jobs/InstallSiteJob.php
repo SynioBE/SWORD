@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Site;
+use App\Services\Ansible;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use phpseclib3\Crypt\EC;
@@ -40,5 +41,12 @@ class InstallSiteJob implements ShouldQueue
         $ssh->login('root', $privateKey);
 
         $ssh->exec(sprintf('wget -qO create-wp-site.sh "%s" && nohup bash create-wp-site.sh > create-wp-site.log 2>&1 < /dev/null & disown', $installUrl));
+
+        if (! config('services.ansible.enabled')) {
+            logger()->warning('Ansible execution is disabled. Skipping RunAnsible job for server ID: '.$this->serverID);
+        } else {
+            $ansible = new Ansible;
+            $ansible->runSitePlaybook($site );
+        }
     }
 }
