@@ -31,7 +31,7 @@ we use Docker Compose secrets and the `secrets/` directory.
 To create a DigitalOcean Droplet:
 
 ```bash
-./vendor/bin/sail artisan digitalocean:droplet:create
+./vendor/bin/sail artisan sword:digitalocean:create
     --name="my-app-server" 
     --region="nyc1" 
     --size="s-1vcpu-1gb" 
@@ -44,7 +44,7 @@ To create a DigitalOcean Droplet:
 To create a Hetzner Cloud Server:
 
 ```bash
-./vendor/bin/sail artisan hetzner:server:create
+./vendor/bin/sail artisan sword:hetzner:create
     --name="my-hetzner-server" 
     --location="fsn1" 
     --type="cx11" 

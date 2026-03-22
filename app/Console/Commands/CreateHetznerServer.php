@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class CreateHetznerServer extends Command
 {
-    protected $signature = 'hetzner:server:create
+    protected $signature = 'sword:hetzner:create
                             {--key= : The API key}
                             {--name= : The server name (a random one will be generated if not provided)}
                             {--location=nbg1 : The Hetzner location}

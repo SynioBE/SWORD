@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class CreateDigitalOceanDroplet extends Command
 {
-    protected $signature = 'digitalocean:droplet:create
+    protected $signature = 'sword:digitalocean:create
                             {--key= : The API key}
                             {--name= : The droplet name (a random one will be generated if not provided)}
                             {--region=nyc1 : The region}
