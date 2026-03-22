@@ -46,19 +46,19 @@ echo -e "${CYAN}║        SWORD Installer               ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 echo ""
 
-read -rp "Domain for SWORD (e.g. sword.example.com): " SWORD_DOMAIN
+read -rp "Domain for SWORD (e.g. sword.example.com): " SWORD_DOMAIN < /dev/tty
 [ -z "$SWORD_DOMAIN" ] && fail "Domain is required."
 
-read -rp "Email for Let's Encrypt certificates: " LE_EMAIL
+read -rp "Email for Let's Encrypt certificates: " LE_EMAIL < /dev/tty
 [ -z "$LE_EMAIL" ] && fail "Email is required."
 
-read -rp "Admin name: " ADMIN_NAME
+read -rp "Admin name: " ADMIN_NAME < /dev/tty
 [ -z "$ADMIN_NAME" ] && fail "Admin name is required."
 
-read -rp "Admin email: " ADMIN_EMAIL
+read -rp "Admin email: " ADMIN_EMAIL < /dev/tty
 [ -z "$ADMIN_EMAIL" ] && fail "Admin email is required."
 
-read -srp "Admin password: " ADMIN_PASSWORD
+read -srp "Admin password: " ADMIN_PASSWORD < /dev/tty
 echo ""
 [ -z "$ADMIN_PASSWORD" ] && fail "Admin password is required."
 
