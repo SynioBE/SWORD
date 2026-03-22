@@ -299,17 +299,20 @@ sed -i "s|__LE_EMAIL__|${LE_EMAIL}|g" "$SWORD_DIR/shared/docker-compose.yml"
 info "Starting shared infrastructure..."
 docker compose -f "$SWORD_DIR/shared/docker-compose.yml" up -d
 
-# Wait for MySQL to be ready
+# Wait for MySQL to be fully ready (including init scripts)
 info "Waiting for MySQL to be ready..."
 for i in $(seq 1 60); do
-    if docker exec sword_mysql mysqladmin ping -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
-        break
+    if docker exec sword_mysql sh -c 'mysqladmin ping -p"${MYSQL_ROOT_PASSWORD}" --silent' 2>/dev/null; then
+        # Also verify we can actually authenticate (init may still be running)
+        if docker exec sword_mysql sh -c 'mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1"' >/dev/null 2>&1; then
+            break
+        fi
     fi
     sleep 2
 done
 
 # Verify MySQL is actually ready
-if ! docker exec sword_mysql mysqladmin ping -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+if ! docker exec sword_mysql sh -c 'mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1"' >/dev/null 2>&1; then
     fail "MySQL failed to start within 120 seconds."
 fi
 
@@ -318,12 +321,12 @@ ok "MySQL is ready."
 # ── Create SWORD database and user ──────────────────────
 
 info "Creating SWORD database..."
-docker exec sword_mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "
+docker exec sword_mysql sh -c "mysql -uroot -p\"\${MYSQL_ROOT_PASSWORD}\" -e \"
     CREATE DATABASE IF NOT EXISTS sword CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     CREATE USER IF NOT EXISTS 'sword'@'%' IDENTIFIED BY '${DB_PASSWORD}';
     GRANT ALL PRIVILEGES ON sword.* TO 'sword'@'%';
     FLUSH PRIVILEGES;
-"
+\""
 
 ok "Database ready."
 
