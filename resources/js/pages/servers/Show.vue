@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     Server,
     CheckCircle2,
@@ -45,7 +45,7 @@ import {
     store as backupSchedulesStore,
     destroy as backupSchedulesDestroy,
 } from '@/routes/servers/backup-schedules';
-import { show as sitesShow } from '@/routes/sites';
+import { show as sitesShow, store as sitesStore } from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
 
 interface BackupRunSummary {
@@ -428,6 +428,30 @@ function formatDuration(seconds: number | null): string {
     return `${hrs}h ${mins % 60}m`;
 }
 
+// ── Add site ─────────────────────────────────────────────────
+const page = usePage();
+const showAddSiteModal = ref(false);
+const phpVersions = ['8.1', '8.2', '8.3', '8.4'];
+
+const siteForm = useForm({
+    server_id: props.server.id,
+    domain: '',
+    php_version: '8.3',
+    wp_admin_user: '',
+    wp_admin_password: '',
+    wp_admin_email: page.props.auth.user.email ?? '',
+    wp_admin_display_name: page.props.auth.user.name ?? '',
+});
+
+function submitAddSite() {
+    siteForm.post(sitesStore().url, {
+        onSuccess: () => {
+            showAddSiteModal.value = false;
+            siteForm.reset('domain', 'wp_admin_user', 'wp_admin_password');
+        },
+    });
+}
+
 // ── Delete server ────────────────────────────────────────────
 const showDeleteDialog = ref(false);
 const deleteForm = useForm({});
@@ -489,11 +513,7 @@ function deleteServer() {
                                     : 'animate-pulse bg-red-500'
                             "
                         />
-                        {{
-                            server.is_online
-                                ? 'Online'
-                                : 'Offline'
-                        }}
+                        {{ server.is_online ? 'Online' : 'Offline' }}
                     </Badge>
 
                     <Badge :variant="statusVariant(server.status)" class="mt-1">
@@ -787,10 +807,20 @@ function deleteServer() {
                     >
                         <Globe class="size-5 shrink-0 text-muted-foreground" />
                         <p class="text-sm font-medium">Sites</p>
-                        <span class="ml-auto text-xs text-muted-foreground">
-                            {{ sites.length }}
-                            {{ sites.length === 1 ? 'site' : 'sites' }}
-                        </span>
+                        <div class="ml-auto flex items-center gap-3">
+                            <span class="text-xs text-muted-foreground">
+                                {{ sites.length }}
+                                {{ sites.length === 1 ? 'site' : 'sites' }}
+                            </span>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                @click="showAddSiteModal = true"
+                            >
+                                <Plus class="size-3.5" />
+                                Create Site
+                            </Button>
+                        </div>
                     </div>
 
                     <div
@@ -1043,6 +1073,150 @@ function deleteServer() {
                     </div>
                 </div>
             </template>
+
+            <!-- Add Site Modal -->
+            <Dialog v-model:open="showAddSiteModal">
+                <DialogContent class="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Add Site</DialogTitle>
+                        <DialogDescription>
+                            Configure your WordPress site on
+                            <strong>{{ server.name }}</strong
+                            >.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <form
+                        class="flex flex-col gap-4 py-2"
+                        @submit.prevent="submitAddSite"
+                    >
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-domain"
+                                >Domain</label
+                            >
+                            <Input
+                                id="site-domain"
+                                v-model="siteForm.domain"
+                                placeholder="e.g. example.com"
+                                :disabled="siteForm.processing"
+                            />
+                            <InputError :message="siteForm.errors.domain" />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-sm font-medium" for="site-php"
+                                >PHP Version</label
+                            >
+                            <select
+                                id="site-php"
+                                v-model="siteForm.php_version"
+                                :disabled="siteForm.processing"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option
+                                    v-for="v in phpVersions"
+                                    :key="v"
+                                    :value="v"
+                                >
+                                    PHP {{ v }}
+                                </option>
+                            </select>
+                            <InputError
+                                :message="siteForm.errors.php_version"
+                            />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label
+                                class="text-sm font-medium"
+                                for="site-wp-user"
+                                >WP Admin Username</label
+                            >
+                            <Input
+                                id="site-wp-user"
+                                v-model="siteForm.wp_admin_user"
+                                placeholder="e.g. admin"
+                                :disabled="siteForm.processing"
+                            />
+                            <InputError
+                                :message="siteForm.errors.wp_admin_user"
+                            />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label
+                                class="text-sm font-medium"
+                                for="site-wp-password"
+                                >WP Admin Password</label
+                            >
+                            <Input
+                                id="site-wp-password"
+                                v-model="siteForm.wp_admin_password"
+                                type="password"
+                                placeholder="Min. 8 characters"
+                                :disabled="siteForm.processing"
+                            />
+                            <InputError
+                                :message="siteForm.errors.wp_admin_password"
+                            />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label
+                                class="text-sm font-medium"
+                                for="site-wp-email"
+                                >WP Admin Email</label
+                            >
+                            <Input
+                                id="site-wp-email"
+                                v-model="siteForm.wp_admin_email"
+                                type="email"
+                                :disabled="siteForm.processing"
+                            />
+                            <InputError
+                                :message="siteForm.errors.wp_admin_email"
+                            />
+                        </div>
+
+                        <div class="flex flex-col gap-1.5">
+                            <label
+                                class="text-sm font-medium"
+                                for="site-wp-display"
+                                >WP Admin Display Name</label
+                            >
+                            <Input
+                                id="site-wp-display"
+                                v-model="siteForm.wp_admin_display_name"
+                                :disabled="siteForm.processing"
+                            />
+                            <InputError
+                                :message="siteForm.errors.wp_admin_display_name"
+                            />
+                        </div>
+
+                        <DialogFooter class="pt-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                :disabled="siteForm.processing"
+                                @click="showAddSiteModal = false"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                :disabled="siteForm.processing"
+                            >
+                                <Loader2
+                                    v-if="siteForm.processing"
+                                    class="size-4 animate-spin"
+                                />
+                                Create Site
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
 
             <!-- Add Schedule Modal -->
             <Dialog v-model:open="showAddScheduleModal">
