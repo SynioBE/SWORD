@@ -7,7 +7,7 @@ set -euo pipefail
 # ============================================================
 
 REPO="https://github.com/SynioBE/SWORD.git"
-BRANCH="main"
+BRANCH="${SWORD_BRANCH:-main}"
 SWORD_DIR="/srv/sword"
 
 # ── Colors ──────────────────────────────────────────────
