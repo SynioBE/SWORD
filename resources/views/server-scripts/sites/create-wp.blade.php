@@ -123,6 +123,7 @@ services:
     restart: unless-stopped
     volumes:
       - ${WP_DIR}:/var/www/html
+      - ${CACHE_DIR}:/var/cache/nginx/fastcgi:rw
     environment:
       - PHP_FPM_POOL_NAME={{ $site->id }}
     networks:
@@ -150,6 +151,7 @@ services:
     image: nginx:alpine
     container_name: sword_{{ $site->id }}_nginx
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "adduser -u 82 -D -S -G www-data www-data 2>/dev/null; sed -i 's/^user  nginx;/user  www-data;/' /etc/nginx/nginx.conf; exec nginx -g 'daemon off;'"]
     volumes:
       - ${WP_DIR}:/var/www/html:ro
       - ${STACK_DIR}/nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -360,8 +362,13 @@ docker exec "sword_{{ $site->id }}_php" wp plugin install nginx-helper \
 
 # Configure Nginx Helper: enable FastCGI purge, set cache path
 docker exec "sword_{{ $site->id }}_php" wp option update rt_wp_nginx_helper_options \
-    '{"enable_purge":"1","cache_method":"enable_fastcgi","purge_method":"get_request","enable_map":null,"enable_log":null,"log_level":"INFO","log_filesize":"5","enable_stamp":null,"purge_homepage_on_edit":"1","purge_homepage_on_del":"1","purge_archive_on_edit":"1","purge_archive_on_del":"1","purge_archive_on_new_comment":"1","purge_archive_on_deleted_comment":"1","purge_page_on_mod":"1","purge_page_on_new_comment":"1","purge_page_on_deleted_comment":"1","redis_hostname":"sword_{{ $site->id }}_redis","redis_port":"6379","redis_prefix":"nginx_cache:","enable_purge_all":null,"nginx_helper_cache_path":"\/var\/cache\/nginx\/fastcgi"}' \
+    '{"enable_purge":"1","cache_method":"enable_fastcgi","purge_method":"unlink_files","enable_map":null,"enable_log":null,"log_level":"INFO","log_filesize":"5","enable_stamp":null,"purge_homepage_on_edit":"1","purge_homepage_on_del":"1","purge_archive_on_edit":"1","purge_archive_on_del":"1","purge_archive_on_new_comment":"1","purge_archive_on_deleted_comment":"1","purge_page_on_mod":"1","purge_page_on_new_comment":"1","purge_page_on_deleted_comment":"1","redis_hostname":"sword_{{ $site->id }}_redis","redis_port":"6379","redis_prefix":"nginx_cache:","enable_purge_all":"1","nginx_helper_cache_path":"\/var\/cache\/nginx\/fastcgi"}' \
     --format=json \
+    --path=/var/www/html \
+    --allow-root
+
+# Grant administrators the capability to purge cache via Nginx Helper
+docker exec "sword_{{ $site->id }}_php" wp cap add administrator 'Nginx Helper | Purge cache' \
     --path=/var/www/html \
     --allow-root
 
