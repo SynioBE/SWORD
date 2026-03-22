@@ -325,6 +325,7 @@ echo ""
 echo "Fixing file permissions..."
 
 chown -R sword:sword "${SITE_DIR}"
+docker exec "sword_{{ $site->id }}_php" chown -R www-data:www-data /var/www/html
 
 # ── Remove default plugins ───────────────────────────────
 
