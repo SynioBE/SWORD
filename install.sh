@@ -421,13 +421,17 @@ docker exec sword_app php artisan migrate --force
 # ── Run sword:init ──────────────────────────────────────
 
 info "Initializing SWORD..."
+SSH_PRIVATE_KEY=$(cat /home/sword/.ssh/id_ed25519)
+SSH_PUBLIC_KEY=$(cat /home/sword/.ssh/id_ed25519.pub)
 docker exec sword_app php artisan sword:init \
     --admin-name="$ADMIN_NAME" \
     --admin-email="$ADMIN_EMAIL" \
     --admin-password="$ADMIN_PASSWORD" \
     --server-ip="$SERVER_IP" \
     --mysql-root-password="$MYSQL_ROOT_PASSWORD" \
-    --sudo-password="$SUDO_PASSWORD"
+    --sudo-password="$SUDO_PASSWORD" \
+    --ssh-private-key="$SSH_PRIVATE_KEY" \
+    --ssh-public-key="$SSH_PUBLIC_KEY"
 
 # ── Firewall ────────────────────────────────────────────
 

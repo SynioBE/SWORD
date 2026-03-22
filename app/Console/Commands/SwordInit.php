@@ -14,7 +14,9 @@ class SwordInit extends Command
         {--admin-password= : Admin user password}
         {--server-ip= : Public IP address of this server}
         {--mysql-root-password= : MySQL root password}
-        {--sudo-password= : Sudo password for the sword user}';
+        {--sudo-password= : Sudo password for the sword user}
+        {--ssh-private-key= : SSH private key contents}
+        {--ssh-public-key= : SSH public key contents}';
 
     protected $description = 'Initialize SWORD with an admin user and localhost server';
 
@@ -30,16 +32,14 @@ class SwordInit extends Command
 
         $this->info("Admin user ready: {$user->email}");
 
-        $sshKeyPath = '/home/sword/.ssh/id_ed25519';
+        $privateKey = $this->option('ssh-private-key');
+        $publicKey = $this->option('ssh-public-key');
 
-        if (! file_exists($sshKeyPath)) {
-            $this->error("SSH key not found at {$sshKeyPath}");
+        if (empty($privateKey) || empty($publicKey)) {
+            $this->error('SSH keys are required. Pass --ssh-private-key and --ssh-public-key.');
 
             return self::FAILURE;
         }
-
-        $privateKey = file_get_contents($sshKeyPath);
-        $publicKey = file_get_contents("{$sshKeyPath}.pub");
 
         $server = Server::firstOrCreate(
             ['provider' => 'localhost'],
