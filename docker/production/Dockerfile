@@ -113,7 +113,7 @@ COPY --from=assets --chown=www-data:www-data /app/public/build /var/www/html/pub
 # Ensure storage and cache dirs exist with correct permissions
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+    && chmod -R 750 storage bootstrap/cache
 
 # Create directory for PHP-FPM socket/pid
 RUN mkdir -p /run/php
