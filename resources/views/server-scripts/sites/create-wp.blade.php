@@ -364,9 +364,51 @@ docker exec "sword_{{ $site->id }}_php" wp option update rt_wp_nginx_helper_opti
     --path=/var/www/html \
     --allow-root
 
-updateProgress "install_wordpress"
+# ── Deploy SWORD magic-login MU-plugin ──────────────────
 
-# ── Restart Ofelia to pick up any new cron jobs ──────────
+echo "Installing SWORD auth MU-plugin..."
+
+cat > /tmp/sword-auth.php << 'SWORD_MU_EOF'
+{!! '<?php' !!}
+/**
+ * Plugin Name: SWORD Magic Login
+ * Description: One-time magic-login token handler for the SWORD control panel.
+ */
+add_action('init', function () {
+    if (empty($_GET['sword_magic'])) {
+        return;
+    }
+
+    // Read and consume the token directly from wp_options via $wpdb,
+    // bypassing the Redis object-cache drop-in entirely.
+    global $wpdb;
+
+    $token = sanitize_text_field(wp_unslash($_GET['sword_magic']));
+    $key   = '_sword_token_' . $token;
+
+    $user_id = $wpdb->get_var(
+        $wpdb->prepare("SELECT option_value FROM `{$wpdb->options}` WHERE option_name = %s", $key)
+    );
+
+    if (! $user_id) {
+        wp_die('Magic login link has expired or is invalid.', 'Login Failed', ['response' => 403]);
+    }
+
+    $wpdb->delete($wpdb->options, ['option_name' => $key], ['%s']);
+
+    wp_set_current_user((int) $user_id);
+    wp_set_auth_cookie((int) $user_id, false);
+    wp_redirect(admin_url());
+    exit;
+});
+SWORD_MU_EOF
+
+docker exec "sword_{{ $site->id }}_php" mkdir -p /var/www/html/wp-content/mu-plugins
+docker cp /tmp/sword-auth.php "sword_{{ $site->id }}_php":/var/www/html/wp-content/mu-plugins/sword-auth.php
+rm /tmp/sword-auth.php
+echo "MU-plugin deployed."
+
+updateProgress "install_wordpress"
 
 echo "Restarting Ofelia..."
 

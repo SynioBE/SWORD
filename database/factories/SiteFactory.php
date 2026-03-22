@@ -32,6 +32,7 @@ class SiteFactory extends Factory
             'db_name' => $dbSlug.'_db',
             'db_user' => $dbSlug.'_user',
             'db_password' => Str::password(32, symbols: false),
+            'wp_admin_user' => 'sword_admin',
             'install_token' => Str::random(64),
             'callback_signature' => hash('sha256', Str::random(40)),
             'status' => 'pending',

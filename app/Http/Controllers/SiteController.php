@@ -11,6 +11,7 @@ use App\Jobs\InstallSiteJob;
 use App\Jobs\RestoreSiteBackupJob;
 use App\Models\BackupRun;
 use App\Models\Site;
+use App\Services\SSH\SSHService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -54,6 +55,7 @@ class SiteController extends Controller
             'db_name' => $dbSlug,
             'db_user' => $dbSlug,
             'db_password' => Str::random(24),
+            'wp_admin_user' => $validated['wp_admin_user'],
         ]);
 
         InstallSiteJob::dispatch(
@@ -125,7 +127,6 @@ class SiteController extends Controller
         return back();
     }
 
-
     public function destroy(Request $request, Site $site): RedirectResponse
     {
         abort_unless($site->user_id === $request->user()->id, 403);
@@ -144,6 +145,48 @@ class SiteController extends Controller
         DeleteSiteJob::dispatch($site);
 
         return redirect()->route('sites.index');
+    }
+
+    public function magicLogin(Request $request, Site $site): RedirectResponse
+    {
+        abort_unless($site->user_id === $request->user()->id, 403);
+        abort_unless($site->status === 'installed', 422);
+
+        $container = "sword_{$site->id}_php";
+        $adminUser = $site->wp_admin_user ?? 'sword_admin';
+
+        // Write the one-time login token directly to the DB via $wpdb, completely bypassing the
+        // Redis object-cache drop-in which intercepts set_transient() and never writes to wp_options.
+        $wpEval = sprintf(
+            'global $wpdb;'.
+            '$user=get_user_by("login","%s");if(!$user){echo "ERR_USER_NOT_FOUND";exit;}'.
+            '$token=bin2hex(random_bytes(32));'.
+            '$key="_sword_token_".$token;'.
+            '$wpdb->query($wpdb->prepare("INSERT INTO `".$wpdb->options."` (option_name,option_value,autoload) VALUES (%%s,%%s,%%s) ON DUPLICATE KEY UPDATE option_value=VALUES(option_value)",[$key,(string)$user->ID,"no"]));'.
+            'echo home_url("/?sword_magic=".$token);',
+            addslashes($adminUser),
+        );
+
+        $command = sprintf(
+            'docker exec %s wp eval %s --path=/var/www/html --allow-root',
+            escapeshellarg($container),
+            escapeshellarg($wpEval),
+        );
+
+        $ssh = app(SSHService::class, ['server' => $site->server, 'timeout' => 30]);
+        $result = $ssh->execute($command);
+
+        if (! $result->isSuccessful() || str_starts_with(trim($result->output), 'ERR_')) {
+            return back()->withErrors(['magic_login' => 'Failed to generate login URL. Check that the site is running.']);
+        }
+
+        $url = trim($result->output);
+
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
+            return back()->withErrors(['magic_login' => 'Unexpected response from the server.']);
+        }
+
+        return redirect($url);
     }
 
     public function installScript(Request $request, Site $site): \Illuminate\Http\Response

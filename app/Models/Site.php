@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
     'db_name',
     'db_user',
     'db_password',
+    'wp_admin_user',
     'install_token',
     'callback_signature',
     'status',
@@ -37,6 +38,7 @@ class Site extends Model
             'install_log' => 'array',
             'installed_at' => 'datetime',
             'db_password' => 'encrypted',
+            'wp_admin_user' => 'encrypted',
         ];
     }
 

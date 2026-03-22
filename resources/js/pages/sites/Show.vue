@@ -11,6 +11,7 @@ import {
     ExternalLink,
     Archive,
     RotateCcw,
+  LogIn,
 } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +36,7 @@ import {
     destroy as sitesDestroy,
     backup as sitesBackup,
     restore as sitesRestore,
+  magicLogin as sitesMagicLogin,
 } from '@/routes/sites';
 import type { BreadcrumbItem } from '@/types';
 
@@ -383,6 +385,11 @@ function deleteSite() {
                         Visit site
                     </Button>
 
+          <Button v-if="isInstalled" variant="outline" size="sm" class="mt-1 gap-1.5" as="a"
+            :href="sitesMagicLogin(site.id).url" target="_blank" rel="noopener noreferrer">
+            <LogIn class="size-3.5" />
+            WP Admin
+          </Button>
                     <Dialog v-model:open="showDeleteDialog">
                         <DialogTrigger as-child>
                             <Button
